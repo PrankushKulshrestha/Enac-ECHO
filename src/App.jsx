@@ -8,6 +8,8 @@ import AboutPage from './pages/AboutPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
+import VerifyCallbackPage from './pages/VerifyCallbackPage';
+
 function Layout({ children }) {
   return (
     <div className="flex flex-col min-h-screen">
@@ -23,20 +25,18 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Layout><HomePage /></Layout>} />
-          <Route path="/about" element={<Layout><AboutPage /></Layout>} />
-          <Route path="/login" element={<Layout><LoginPage /></Layout>} />
-          <Route path="/register" element={<Layout><RegisterPage /></Layout>} />
-          <Route
-            path="/dashboard"
-            element={
-              <Layout>
-                <ProtectedRoute>
-                  <DashboardPage />
-                </ProtectedRoute>
-              </Layout>
-            }
-          />
+          <Route path="/"          element={<Layout><HomePage /></Layout>} />
+          <Route path="/about"     element={<Layout><AboutPage /></Layout>} />
+          <Route path="/login"     element={<Layout><LoginPage /></Layout>} />
+          <Route path="/register"  element={<Layout><RegisterPage /></Layout>} />
+          <Route path="/verify"    element={<Layout><VerifyCallbackPage /></Layout>} />
+          <Route path="/dashboard" element={
+            <Layout>
+              <ProtectedRoute>
+                <DashboardPage />
+              </ProtectedRoute>
+            </Layout>
+          } />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

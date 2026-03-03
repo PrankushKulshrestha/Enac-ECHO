@@ -1,46 +1,68 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Leaf, Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Leaf, Mail, AlertCircle, CheckCircle, ArrowRight } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [email, setEmail]     = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const { login } = useAuth();
-  const navigate = useNavigate();
+  const [sent, setSent]       = useState(false);
+  const [error, setError]     = useState('');
+  const { sendMagicURL }      = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      await login(email, password);
-      navigate('/dashboard');
+      await sendMagicURL(email);
+      setSent(true);
     } catch (err) {
-      setError(err.message || 'Invalid credentials. Please try again.');
+      setError(err.message || 'Failed to send link. Please try again.');
     } finally {
       setLoading(false);
     }
   };
+
+  if (sent) {
+    return (
+      <div className="min-h-screen bg-hero-pattern flex items-center justify-center px-6 py-24">
+        <div className="w-full max-w-md bg-white rounded-3xl shadow-xl shadow-moss/10 border border-eco-100 p-10 text-center">
+          <div className="w-16 h-16 bg-eco-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <Mail className="w-8 h-8 text-moss" strokeWidth={1.5} />
+          </div>
+          <h1 className="font-display font-bold text-2xl text-moss mb-2">Check your inbox</h1>
+          <p className="font-body text-bark/55 text-sm leading-relaxed mb-2">
+            We sent a magic link to
+          </p>
+          <p className="font-display font-semibold text-moss text-sm mb-4">{email}</p>
+          <p className="font-body text-bark/45 text-xs leading-relaxed mb-8">
+            Click the link in the email to sign in. It expires in 1 hour. Check spam if you don't see it.
+          </p>
+          <button
+            onClick={() => setSent(false)}
+            className="font-body text-sm text-bark/45 hover:text-bark/70 transition-colors"
+          >
+            Use a different email
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-hero-pattern flex items-center justify-center px-6 py-24">
       <div className="w-full max-w-md">
         <div className="bg-white rounded-3xl shadow-xl shadow-moss/10 border border-eco-100 p-8 lg:p-10">
 
-          {/* Header */}
           <div className="text-center mb-8">
             <Link to="/" className="inline-flex items-center justify-center w-14 h-14 bg-moss rounded-2xl mb-4 hover:bg-leaf transition-colors duration-300">
               <Leaf className="w-7 h-7 text-cream" />
             </Link>
-            <h1 className="font-display font-bold text-2xl text-moss mb-1">Welcome Back</h1>
-            <p className="font-body text-bark/55 text-sm">Sign in to your ECHO account</p>
+            <h1 className="font-display font-bold text-2xl text-moss mb-1">Welcome to ECHO</h1>
+            <p className="font-body text-bark/55 text-sm">Enter your email to get a magic sign-in link</p>
           </div>
 
-          {/* Error */}
           {error && (
             <div className="flex items-center gap-3 bg-red-50 border border-red-100 text-red-700 rounded-2xl p-4 mb-6">
               <AlertCircle className="w-4 h-4 shrink-0" />
@@ -48,10 +70,7 @@ export default function LoginPage() {
             </div>
           )}
 
-          {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-5">
-
-            {/* Email */}
             <div>
               <label className="font-display font-medium text-sm text-bark/70 mb-2 block">
                 Email Address
@@ -69,40 +88,6 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {/* Password */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="font-display font-medium text-sm text-bark/70">
-                  Password
-                </label>
-                <button
-                  type="button"
-                  className="font-body text-xs text-moss hover:text-leaf transition-colors duration-200"
-                >
-                  Forgot password?
-                </button>
-              </div>
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-bark/40" />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  required
-                  className="w-full pl-11 pr-12 py-3.5 border-2 border-eco-100 rounded-2xl font-body text-sm text-bark focus:outline-none focus:border-moss transition-colors duration-200 bg-cream/50"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-bark/40 hover:text-bark/70 transition-colors"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-
-            {/* Submit */}
             <button
               type="submit"
               disabled={loading}
@@ -114,38 +99,31 @@ export default function LoginPage() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                   </svg>
-                  Signing in...
+                  Sending link...
                 </span>
-              ) : 'Sign In'}
+              ) : (
+                <span className="flex items-center gap-2">
+                  Send Magic Link
+                  <ArrowRight className="w-4 h-4" />
+                </span>
+              )}
             </button>
           </form>
 
-          {/* Divider */}
-          <div className="flex items-center gap-4 my-6">
-            <div className="flex-1 h-px bg-eco-100" />
-            <span className="font-mono text-xs text-bark/35 tracking-widest uppercase">or</span>
-            <div className="flex-1 h-px bg-eco-100" />
-          </div>
-
-          {/* Register nudge */}
-          <div className="bg-eco-50 border border-eco-100 rounded-2xl p-5 text-center">
-            <p className="font-body text-sm text-bark/60 mb-3">
-              New to Project ECHO? Join the sustainable revolution.
-            </p>
-            <Link
-              to="/register"
-              className="btn-secondary text-sm py-2.5 px-6 inline-flex justify-center w-full"
-            >
-              Create an Account
-            </Link>
+          <div className="mt-8 bg-eco-50 border border-eco-100 rounded-2xl p-4 space-y-2">
+            {[
+              'No password needed',
+              'One click sign in from your email',
+              'New users are registered automatically',
+            ].map((item) => (
+              <div key={item} className="flex items-center gap-2">
+                <CheckCircle className="w-3.5 h-3.5 text-eco-500 shrink-0" />
+                <span className="font-body text-xs text-bark/65">{item}</span>
+              </div>
+            ))}
           </div>
 
         </div>
-
-        {/* Footer note */}
-        <p className="text-center font-body text-xs text-bark/40 mt-6">
-          By signing in, you agree to contribute to a greener NSUT 🌱
-        </p>
       </div>
     </div>
   );

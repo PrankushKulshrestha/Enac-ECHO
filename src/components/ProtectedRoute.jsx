@@ -12,11 +12,15 @@ export default function ProtectedRoute({ children }) {
             className="w-12 h-12 rounded-full animate-spin"
             style={{ border: '3px solid #dcfce7', borderTopColor: '#2D4A22' }}
           />
-          <span className="font-mono text-sm text-bark/50 tracking-widest uppercase">Loading...</span>
+          <span className="font-mono text-sm text-bark/50 tracking-widest uppercase">
+            Loading...
+          </span>
         </div>
       </div>
     );
   }
 
-  return user ? children : <Navigate to="/login" replace />;
+  if (!user) return <Navigate to="/login" replace />;
+
+  return children;
 }
