@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { account, databases, DB_ID, COLLECTIONS, ID, Query } from './appwrite';
+import { account, databases, DB_ID, ID, COLLECTIONS, Query } from './appwrite';
 
 const AuthContext = createContext(null);
 
@@ -60,7 +60,7 @@ export function AuthProvider({ children }) {
 
     // 4. Send magic link for verification
     await account.createMagicURLToken(
-      ID.unique(),
+      newUser.$id,
       email,
       `${window.location.origin}/verify`
     );
