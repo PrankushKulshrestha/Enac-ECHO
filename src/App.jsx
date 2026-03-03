@@ -8,7 +8,6 @@ import AboutPage from './pages/AboutPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
-import { SpeedInsights } from "@vercel/speed-insights/next"
 function Layout({ children }) {
   return (
     <div className="flex flex-col min-h-screen">
@@ -24,7 +23,6 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          <SpeedInsights />
           <Route path="/" element={<Layout><HomePage /></Layout>} />
           <Route path="/about" element={<Layout><AboutPage /></Layout>} />
           <Route path="/login" element={<Layout><LoginPage /></Layout>} />
