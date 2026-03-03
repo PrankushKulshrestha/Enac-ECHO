@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Mail, RefreshCw, LogOut, CheckCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
-import { account, ID } from "../lib/appwrite";
+import { account} from "../lib/appwrite";
 
 export default function UnverifiedPage() {
   const { user, logout } = useAuth();
@@ -14,10 +14,10 @@ export default function UnverifiedPage() {
     setLoading(true);
     try {
       await account.createMagicURLToken(
-        ID.unique(),
-        user.email,
-        `${window.location.origin}/verify`,
-      );
+  user.$id,      // use the actual logged-in user's ID
+  user.email,
+  `${window.location.origin}/verify`,
+);
       setSent(true);
     } catch (e) {
       console.error(e);
