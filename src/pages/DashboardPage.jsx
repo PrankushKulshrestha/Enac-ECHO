@@ -13,8 +13,8 @@ import { useAuth } from '../lib/AuthContext';
 const BINS = [
   { id: 'bin-1', label: 'Main Gate Lobby' },
   { id: 'bin-2', label: 'Library Entrance' },
-  { id: 'bin-3', label: 'Block A Ground Floor' },
-  { id: 'bin-4', label: 'Block B Ground Floor' },
+  { id: 'bin-3', label: 'Block 6 Ground Floor' },
+  { id: 'bin-4', label: 'Block 4 Ground Floor' },
   { id: 'bin-5', label: 'Canteen Area' },
   { id: 'bin-6', label: 'Sports Complex' },
 ];
