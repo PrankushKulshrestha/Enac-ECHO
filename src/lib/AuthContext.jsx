@@ -18,8 +18,10 @@ export function AuthProvider({ children }) {
       setUser(currentUser);
       await fetchProfile(currentUser.$id);
     } catch {
-      setUser(null);
-      setProfile(null);
+      // Check if we have a user set already from completeMagicURL
+      // If so, keep them logged in — don't wipe state
+      setUser((prev) => prev ?? null);
+      setProfile((prev) => prev ?? null);
     } finally {
       setLoading(false);
     }
@@ -34,22 +36,45 @@ export function AuthProvider({ children }) {
     }
   }
 
-  async function sendMagicURL(email) {
-    await account.createMagicURLToken(
-      ID.unique(),
-      email,
-      `${window.location.origin}/verify`,
-    );
-    localStorage.setItem("echo_pending_email", email);
-  }
+  async function register(email, password, name) {
+  const newUser = await account.create(ID.unique(), email, password, name);
+  await account.createEmailPasswordSession(email, password);
+  await databases.createDocument(DB_ID, COLLECTIONS.USERS, newUser.$id, {
+    userId:        newUser.$id,
+    name,
+    email,
+    points:        0,
+    totalDeposits: 0,
+    createdAt:     new Date().toISOString(),
+  });
+  await account.createMagicURLToken(
+    ID.unique(),
+    email,
+    `${window.location.origin}/verify`
+  );
+  try { await account.deleteSession('current'); } catch {}
+  localStorage.setItem('echo_pending_email', email);
+}
 
+  async function login(email, password) {
+    const session = await account.createEmailPasswordSession(email, password);
+    // Use session data directly without calling account.get()
+    setUser({
+      $id: session.userId,
+      email,
+      name: "",
+      emailVerification: true,
+    });
+    await fetchProfile(session.userId);
+    setLoading(false);
+  }
   async function completeMagicURL(userId, secret) {
     const session = await account.updateMagicURLSession(userId, secret);
+    console.log("session:", JSON.stringify(session));
 
     const sessionUserId = session.userId;
     const sessionEmail = localStorage.getItem("echo_pending_email") || "";
 
-    // Create profile if new user
     try {
       await databases.getDocument(DB_ID, COLLECTIONS.USERS, sessionUserId);
     } catch {
@@ -65,8 +90,6 @@ export function AuthProvider({ children }) {
 
     localStorage.removeItem("echo_pending_email");
 
-    // Set user directly — don't call checkAuth which uses account.get()
-    // account.get() fails on localhost due to cookie issues
     setUser({
       $id: sessionUserId,
       email: sessionEmail,
@@ -84,7 +107,6 @@ export function AuthProvider({ children }) {
     } catch {}
     setUser(null);
     setProfile(null);
-    localStorage.removeItem(`cookieFallback`);
   }
 
   async function refreshProfile() {
@@ -97,7 +119,8 @@ export function AuthProvider({ children }) {
         user,
         profile,
         loading,
-        sendMagicURL,
+        login,
+        register,
         completeMagicURL,
         logout,
         refreshProfile,

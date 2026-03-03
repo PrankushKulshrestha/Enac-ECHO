@@ -25,7 +25,7 @@ export default function VerifyCallbackPage() {
     completeMagicURL(userId, secret)
       .then(() => {
         setStatus("success");
-        navigate("/dashboard", { replace: true });
+        setTimeout(() => navigate("/dashboard", { replace: true }), 1500);
       })
       .catch((err) => {
         console.error("Full error:", err);
