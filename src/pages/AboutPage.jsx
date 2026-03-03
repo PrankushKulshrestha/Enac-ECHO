@@ -12,7 +12,7 @@ export default function AboutPage() {
             About Project ECHO
           </span>
           <h1 className="font-display font-bold text-4xl sm:text-5xl text-moss mt-4 mb-4 leading-tight">
-            Electronic Collection &<br />Handling Organization
+             E-Waste Collection <br />Hub Operation
           </h1>
           <p className="font-body text-bark/60 text-lg max-w-2xl mx-auto leading-relaxed">
             A student-driven initiative by Enactus NSUT to tackle e-waste on campus

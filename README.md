@@ -1,6 +1,6 @@
 # Project ECHO — Frontend
 
-**Electronic Collection & Handling Organization**  
+**E-Waste Collection Hub Operation**  
 A sustainable e-waste initiative by Enactus NSUT.
 
 ## Tech Stack

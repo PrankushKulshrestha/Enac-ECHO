@@ -121,7 +121,7 @@ export default function HomePage() {
 
           {/* Subtitle */}
           <p className="font-body text-bark/60 text-lg sm:text-xl leading-relaxed max-w-2xl mx-auto mb-4">
-            <span className="font-semibold text-leaf">Electronic Collection & Handling Organization</span>
+            <span className="font-semibold text-leaf">E-Waste Collection Hub Operation</span>
           </p>
           <p className="font-body text-bark/55 text-base sm:text-lg leading-relaxed max-w-xl mx-auto mb-10">
             Transform your e-waste into eco-points. Join the sustainable revolution at NSUT.
