@@ -30,11 +30,12 @@ export async function updateUserPoints(userId, pointsToAdd) {
 // ── SUBMISSIONS ───────────────────────────────────────────
 
 export async function createSubmission(userId, { items, binId, groupId }) {
+  // Points are NOT awarded here — only after admin approves
   const totalPoints = items.reduce((sum, item) => {
     return sum + (ITEM_POINTS[item.itemType] || 10) * item.quantity;
   }, 0);
 
-  const submission = await databases.createDocument(
+  return databases.createDocument(
     DB_ID, COLLECTIONS.SUBMISSIONS, ID.unique(), {
       userId,
       items:       JSON.stringify(items),
@@ -45,22 +46,58 @@ export async function createSubmission(userId, { items, binId, groupId }) {
       submittedAt: new Date().toISOString(),
     }
   );
-
-  await updateUserPoints(userId, totalPoints);
-
-  if (groupId) {
-    await addPointsToGroup(groupId, totalPoints);
-  }
-
-  return submission;
 }
 
 export async function getUserSubmissions(userId) {
   return databases.listDocuments(DB_ID, COLLECTIONS.SUBMISSIONS, [
     Query.equal('userId', userId),
     Query.orderDesc('submittedAt'),
-    Query.limit(20),
+    Query.limit(100),
   ]);
+}
+
+export async function updateSubmissionStatus(submissionId, newStatus) {
+  const submission = await databases.getDocument(DB_ID, COLLECTIONS.SUBMISSIONS, submissionId);
+  const oldStatus  = submission.status;
+
+  // No-op if status hasn't changed
+  if (oldStatus === newStatus) return;
+
+  await databases.updateDocument(DB_ID, COLLECTIONS.SUBMISSIONS, submissionId, {
+    status: newStatus,
+  });
+
+  const { userId, totalPoints, groupId } = submission;
+
+  // Award points when moving TO verified
+  if (newStatus === 'verified') {
+    const profile = await getUserProfile(userId);
+    await databases.updateDocument(DB_ID, COLLECTIONS.USERS, userId, {
+      points:        profile.points + totalPoints,
+      totalDeposits: profile.totalDeposits + 1,
+    });
+    if (groupId) {
+      const group = await databases.getDocument(DB_ID, COLLECTIONS.GROUPS, groupId);
+      await databases.updateDocument(DB_ID, COLLECTIONS.GROUPS, groupId, {
+        totalPoints: group.totalPoints + totalPoints,
+      });
+    }
+  }
+
+  // Claw back points when moving FROM verified to rejected/pending
+  if (oldStatus === 'verified' && newStatus !== 'verified') {
+    const profile = await getUserProfile(userId);
+    await databases.updateDocument(DB_ID, COLLECTIONS.USERS, userId, {
+      points:        Math.max(0, profile.points - totalPoints),
+      totalDeposits: Math.max(0, profile.totalDeposits - 1),
+    });
+    if (groupId) {
+      const group = await databases.getDocument(DB_ID, COLLECTIONS.GROUPS, groupId);
+      await databases.updateDocument(DB_ID, COLLECTIONS.GROUPS, groupId, {
+        totalPoints: Math.max(0, group.totalPoints - totalPoints),
+      });
+    }
+  }
 }
 
 // ── REWARDS ───────────────────────────────────────────────
@@ -133,7 +170,6 @@ export async function createGroup(name, createdBy) {
       createdAt:   new Date().toISOString(),
     }
   );
-  // Append new groupId to user's groupIds array
   const profile = await getUserProfile(createdBy);
   const existing = profile.groupIds || [];
   await databases.updateDocument(DB_ID, COLLECTIONS.USERS, createdBy, {
@@ -162,23 +198,35 @@ export async function addPointsToGroup(groupId, points) {
 export async function getGroupLeaderboard() {
   return databases.listDocuments(DB_ID, COLLECTIONS.GROUPS, [
     Query.orderDesc('totalPoints'),
-    Query.limit(20),
+    Query.limit(100),
   ]);
 }
 
 export async function leaveGroup(userId, groupId) {
-  // Remove user from group's memberIds
   const group = await getGroup(groupId);
-  const members = JSON.parse(group.memberIds).filter(id => id !== userId);
+  const members = JSON.parse(group.memberIds || '[]').filter(id => id !== userId);
   await databases.updateDocument(DB_ID, COLLECTIONS.GROUPS, groupId, {
     memberIds: JSON.stringify(members),
   });
-  // Remove groupId from user's groupIds array
+
   const profile = await getUserProfile(userId);
   const groupIds = (profile.groupIds || []).filter(id => id !== groupId);
   await databases.updateDocument(DB_ID, COLLECTIONS.USERS, userId, {
     groupIds,
   });
+
+  if (members.length === 0) {
+    const pendingInvites = await databases.listDocuments(DB_ID, COLLECTIONS.INVITES, [
+      Query.equal('groupId', groupId),
+      Query.equal('status', 'pending'),
+    ]);
+    await Promise.all(
+      pendingInvites.documents.map(inv =>
+        databases.deleteDocument(DB_ID, COLLECTIONS.INVITES, inv.$id)
+      )
+    );
+    await databases.deleteDocument(DB_ID, COLLECTIONS.GROUPS, groupId);
+  }
 }
 
 // ── INVITES ───────────────────────────────────────────────
@@ -192,8 +240,12 @@ export async function sendInvite(groupId, email, invitedBy, inviterName, inviter
   if (existing.documents.length > 0) {
     throw new Error('An invite has already been sent to this email.');
   }
+
+  const group = await getGroup(groupId);
+
   return databases.createDocument(DB_ID, COLLECTIONS.INVITES, ID.unique(), {
     groupId,
+    groupName:    group.name,
     email,
     invitedBy,
     inviterName:  inviterName  || 'A member',
@@ -212,12 +264,12 @@ export async function getPendingInvites(email) {
 
 export async function acceptInvite(inviteId, userId, groupId) {
   const group = await getGroup(groupId);
-  const members = JSON.parse(group.memberIds);
+  const members = JSON.parse(group.memberIds || '[]');
   if (!members.includes(userId)) members.push(userId);
   await databases.updateDocument(DB_ID, COLLECTIONS.GROUPS, groupId, {
     memberIds: JSON.stringify(members),
   });
-  // Append to user's groupIds array
+
   const profile = await getUserProfile(userId);
   const groupIds = profile.groupIds || [];
   if (!groupIds.includes(groupId)) {
@@ -225,6 +277,7 @@ export async function acceptInvite(inviteId, userId, groupId) {
       groupIds: [...groupIds, groupId],
     });
   }
+
   await databases.updateDocument(DB_ID, COLLECTIONS.INVITES, inviteId, {
     status: 'accepted',
   });
@@ -241,7 +294,7 @@ export async function declineInvite(inviteId) {
 export async function getAllUsers() {
   return databases.listDocuments(DB_ID, COLLECTIONS.USERS, [
     Query.orderDesc('$createdAt'),
-    Query.limit(50),
+    Query.limit(100),
   ]);
 }
 
@@ -252,19 +305,23 @@ export async function getAllSubmissions() {
   ]);
 }
 
-export async function deleteSubmission(submissionId, userId, pointsToRemove) {
-  const profile = await getUserProfile(userId);
-  await databases.updateDocument(DB_ID, COLLECTIONS.USERS, userId, {
-    points:        Math.max(0, profile.points - pointsToRemove),
-    totalDeposits: Math.max(0, profile.totalDeposits - 1),
-  });
-
+export async function deleteSubmission(submissionId) {
+  // Fetch submission to check status before touching points
   const submission = await databases.getDocument(DB_ID, COLLECTIONS.SUBMISSIONS, submissionId);
-  if (submission.groupId) {
-    const group = await getGroup(submission.groupId);
-    await databases.updateDocument(DB_ID, COLLECTIONS.GROUPS, submission.groupId, {
-      totalPoints: Math.max(0, group.totalPoints - pointsToRemove),
+
+  // Only deduct points if submission was verified (points were awarded)
+  if (submission.status === 'verified') {
+    const profile = await getUserProfile(submission.userId);
+    await databases.updateDocument(DB_ID, COLLECTIONS.USERS, submission.userId, {
+      points:        Math.max(0, profile.points - submission.totalPoints),
+      totalDeposits: Math.max(0, profile.totalDeposits - 1),
     });
+    if (submission.groupId) {
+      const group = await getGroup(submission.groupId);
+      await databases.updateDocument(DB_ID, COLLECTIONS.GROUPS, submission.groupId, {
+        totalPoints: Math.max(0, group.totalPoints - submission.totalPoints),
+      });
+    }
   }
 
   await databases.deleteDocument(DB_ID, COLLECTIONS.SUBMISSIONS, submissionId);
