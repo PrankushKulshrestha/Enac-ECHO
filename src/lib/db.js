@@ -30,7 +30,6 @@ export async function updateUserPoints(userId, pointsToAdd) {
 // ── SUBMISSIONS ───────────────────────────────────────────
 
 export async function createSubmission(userId, { items, binId, groupId }) {
-  // items = [{ itemType, quantity }, ...]
   const totalPoints = items.reduce((sum, item) => {
     return sum + (ITEM_POINTS[item.itemType] || 10) * item.quantity;
   }, 0);
@@ -47,10 +46,8 @@ export async function createSubmission(userId, { items, binId, groupId }) {
     }
   );
 
-  // Add points to user
   await updateUserPoints(userId, totalPoints);
 
-  // Add points to group if applicable
   if (groupId) {
     await addPointsToGroup(groupId, totalPoints);
   }
@@ -136,15 +133,23 @@ export async function createGroup(name, createdBy) {
       createdAt:   new Date().toISOString(),
     }
   );
-  // Add groupId to user profile
+  // Append new groupId to user's groupIds array
+  const profile = await getUserProfile(createdBy);
+  const existing = profile.groupIds || [];
   await databases.updateDocument(DB_ID, COLLECTIONS.USERS, createdBy, {
-    groupId: group.$id,
+    groupIds: [...existing, group.$id],
   });
   return group;
 }
 
 export async function getGroup(groupId) {
   return databases.getDocument(DB_ID, COLLECTIONS.GROUPS, groupId);
+}
+
+export async function getGroups(groupIds) {
+  if (!groupIds || groupIds.length === 0) return [];
+  const results = await Promise.all(groupIds.map(id => getGroup(id).catch(() => null)));
+  return results.filter(Boolean);
 }
 
 export async function addPointsToGroup(groupId, points) {
@@ -162,20 +167,23 @@ export async function getGroupLeaderboard() {
 }
 
 export async function leaveGroup(userId, groupId) {
+  // Remove user from group's memberIds
   const group = await getGroup(groupId);
   const members = JSON.parse(group.memberIds).filter(id => id !== userId);
   await databases.updateDocument(DB_ID, COLLECTIONS.GROUPS, groupId, {
     memberIds: JSON.stringify(members),
   });
+  // Remove groupId from user's groupIds array
+  const profile = await getUserProfile(userId);
+  const groupIds = (profile.groupIds || []).filter(id => id !== groupId);
   await databases.updateDocument(DB_ID, COLLECTIONS.USERS, userId, {
-    groupId: null,
+    groupIds,
   });
 }
 
 // ── INVITES ───────────────────────────────────────────────
 
-export async function sendInvite(groupId, email, invitedBy) {
-  // Check if invite already exists
+export async function sendInvite(groupId, email, invitedBy, inviterName, inviterEmail) {
   const existing = await databases.listDocuments(DB_ID, COLLECTIONS.INVITES, [
     Query.equal('email', email),
     Query.equal('groupId', groupId),
@@ -188,8 +196,10 @@ export async function sendInvite(groupId, email, invitedBy) {
     groupId,
     email,
     invitedBy,
-    status:    'pending',
-    createdAt: new Date().toISOString(),
+    inviterName:  inviterName  || 'A member',
+    inviterEmail: inviterEmail || '',
+    status:       'pending',
+    createdAt:    new Date().toISOString(),
   });
 }
 
@@ -201,18 +211,20 @@ export async function getPendingInvites(email) {
 }
 
 export async function acceptInvite(inviteId, userId, groupId) {
-  // Add user to group
   const group = await getGroup(groupId);
   const members = JSON.parse(group.memberIds);
   if (!members.includes(userId)) members.push(userId);
   await databases.updateDocument(DB_ID, COLLECTIONS.GROUPS, groupId, {
     memberIds: JSON.stringify(members),
   });
-  // Update user profile
-  await databases.updateDocument(DB_ID, COLLECTIONS.USERS, userId, {
-    groupId,
-  });
-  // Mark invite as accepted
+  // Append to user's groupIds array
+  const profile = await getUserProfile(userId);
+  const groupIds = profile.groupIds || [];
+  if (!groupIds.includes(groupId)) {
+    await databases.updateDocument(DB_ID, COLLECTIONS.USERS, userId, {
+      groupIds: [...groupIds, groupId],
+    });
+  }
   await databases.updateDocument(DB_ID, COLLECTIONS.INVITES, inviteId, {
     status: 'accepted',
   });
@@ -241,14 +253,12 @@ export async function getAllSubmissions() {
 }
 
 export async function deleteSubmission(submissionId, userId, pointsToRemove) {
-  // Remove points from user
   const profile = await getUserProfile(userId);
   await databases.updateDocument(DB_ID, COLLECTIONS.USERS, userId, {
     points:        Math.max(0, profile.points - pointsToRemove),
     totalDeposits: Math.max(0, profile.totalDeposits - 1),
   });
 
-  // If group submission, remove points from group too
   const submission = await databases.getDocument(DB_ID, COLLECTIONS.SUBMISSIONS, submissionId);
   if (submission.groupId) {
     const group = await getGroup(submission.groupId);
@@ -257,6 +267,5 @@ export async function deleteSubmission(submissionId, userId, pointsToRemove) {
     });
   }
 
-  // Delete the document
   await databases.deleteDocument(DB_ID, COLLECTIONS.SUBMISSIONS, submissionId);
 }
