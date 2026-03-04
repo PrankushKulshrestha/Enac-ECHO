@@ -60,21 +60,32 @@ npm run build
 ## Project Structure
 
 ```
-src/
-├── components/
-│   ├── Navbar.jsx        # Sticky navbar with auth state
-│   ├── Footer.jsx        # Footer with links & contact
-│   └── ProtectedRoute.jsx
-├── lib/
-│   ├── appwrite.js       # Appwrite client config
-│   └── AuthContext.jsx   # React auth context
-├── pages/
-│   ├── HomePage.jsx      # Landing page
-│   ├── AboutPage.jsx     # About ECHO
-│   ├── LoginPage.jsx     # Sign in
-│   ├── RegisterPage.jsx  # Sign up
-│   └── DashboardPage.jsx # User dashboard (protected)
-└── index.css             # Tailwind + custom styles
+src
+│   App.jsx
+│   index.css
+│   main.jsx
+│
+├───components
+│       AdminRoute.jsx
+│       Footer.jsx
+│       Navbar.jsx
+│       ProtectedRoute.jsx
+│
+├───lib
+│       appwrite.js
+│       AuthContext.jsx
+│       db.js
+│
+└───pages
+        AboutPage.jsx
+        AdminPage.jsx
+        DashboardPage.jsx
+        GroupsPage.jsx
+        HomePage.jsx
+        LoginPage.jsx
+        RegisterPage.jsx
+        UnverifiedPage.jsx
+        VerifyCallbackPage.jsx
 ```
 
 ## Design System
