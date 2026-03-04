@@ -2,10 +2,9 @@ import { useState } from "react";
 import { Mail, RefreshCw, LogOut, CheckCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
-import { account} from "../lib/appwrite";
 
 export default function UnverifiedPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, login } = useAuth();
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -13,11 +12,8 @@ export default function UnverifiedPage() {
   async function handleResend() {
     setLoading(true);
     try {
-      await account.createMagicURLToken(
-  user.$id,      // use the actual logged-in user's ID
-  user.email,
-  `${window.location.origin}/verify`,
-);
+      // Re-use the login function — it sends a fresh magic link to the user's email
+      await login(user.email);
       setSent(true);
     } catch (e) {
       console.error(e);
@@ -56,9 +52,7 @@ export default function UnverifiedPage() {
           {sent ? (
             <div className="flex items-center justify-center gap-2 text-eco-600 py-3 bg-eco-50 rounded-2xl">
               <CheckCircle className="w-4 h-4" />
-              <span className="font-body text-sm">
-                Verification email sent!
-              </span>
+              <span className="font-body text-sm">Verification email sent!</span>
             </div>
           ) : (
             <button
@@ -68,24 +62,9 @@ export default function UnverifiedPage() {
             >
               {loading ? (
                 <span className="flex items-center gap-2">
-                  <svg
-                    className="animate-spin w-4 h-4"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                    />
+                  <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                   </svg>
                   Sending...
                 </span>

@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { account, databases, DB_ID, ID, COLLECTIONS, Query } from './appwrite';
+import { account, databases, DB_ID, COLLECTIONS, ID, Query } from './appwrite';
 
 const AuthContext = createContext(null);
 
@@ -32,20 +32,22 @@ export function AuthProvider({ children }) {
     }
   }
 
-  async function register(email, password, name) {
-    // 1. Create auth account
-    const newUser = await account.create(ID.unique(), email, password, name);
+  // ── REGISTER ────────────────────────────────────────────
+  // Creates account with a dummy password (user never sees/uses it),
+  // creates DB profile, then sends magic link for first-time login.
+  async function register(email, name) {
+    // 1. Create auth account with a random password the user never needs
+    const dummyPassword = ID.unique() + ID.unique(); // long random string
+    const newUser = await account.create(ID.unique(), email, dummyPassword, name);
 
-    // 2. Login to get session for DB write
-    await account.createEmailPasswordSession(email, password);
+    // 2. Temporary session to write DB profile
+    await account.createEmailPasswordSession(email, dummyPassword);
 
-    // 3. Check if profile already exists, create only if not
+    // 3. Create DB profile
     try {
       await databases.getDocument(DB_ID, COLLECTIONS.USERS, newUser.$id);
-      // Document exists — just update name
       await databases.updateDocument(DB_ID, COLLECTIONS.USERS, newUser.$id, { name });
     } catch {
-      // Document doesn't exist — create it
       await databases.createDocument(DB_ID, COLLECTIONS.USERS, newUser.$id, {
         userId:        newUser.$id,
         name,
@@ -58,52 +60,39 @@ export function AuthProvider({ children }) {
       });
     }
 
-    // 4. Send magic link for verification
+    // 4. Send magic link — this is their actual login link
     await account.createMagicURLToken(
       newUser.$id,
       email,
       `${window.location.origin}/verify`
     );
 
-    // 5. Logout — must verify before dashboard access
+    // 5. Destroy the temporary session — user logs in via magic link only
     try { await account.deleteSession('current'); } catch {}
     localStorage.setItem('echo_pending_email', email);
   }
 
-  async function login(email, password) {
-    const session = await account.createEmailPasswordSession(email, password);
-
-    localStorage.setItem('cookieFallback', JSON.stringify({
-      [`a_session_${import.meta.env.VITE_APPWRITE_PROJECT_ID}`]: session.$id,
-      [`a_session_${import.meta.env.VITE_APPWRITE_PROJECT_ID}_legacy`]: session.$id,
-    }));
-
-    try {
-      const currentUser = await account.get();
-      setUser(currentUser);
-      await fetchProfile(currentUser.$id);
-    } catch {
-      // Localhost fallback — get most recently updated doc for this email
-      const result = await databases.listDocuments(DB_ID, COLLECTIONS.USERS, [
-        Query.equal('email', email),
-        Query.orderDesc('$updatedAt'),
-        Query.limit(1),
-      ]);
-      if (result.documents.length > 0) {
-        const dbUser = result.documents[0];
-        setUser({
-          $id:               dbUser.userId,
-          email:             dbUser.email,
-          name:              dbUser.name,
-          emailVerification: dbUser.isVerified,
-        });
-        setProfile(dbUser);
-      }
-    } finally {
-      setLoading(false);
+  // ── LOGIN ────────────────────────────────────────────────
+  // Just sends a magic link — no password involved at all.
+  async function login(email) {
+    // Check if an account exists for this email first
+    const result = await databases.listDocuments(DB_ID, COLLECTIONS.USERS, [
+      Query.equal('email', email),
+      Query.limit(1),
+    ]);
+    if (result.documents.length === 0) {
+      throw new Error('No account found with this email. Please register first.');
     }
+    const userId = result.documents[0].userId;
+    await account.createMagicURLToken(
+      userId,
+      email,
+      `${window.location.origin}/verify`
+    );
+    localStorage.setItem('echo_pending_email', email);
   }
 
+  // ── COMPLETE MAGIC LINK ──────────────────────────────────
   async function completeMagicURL(userId, secret) {
     const session       = await account.updateMagicURLSession(userId, secret);
     const sessionUserId = session.userId;
@@ -119,12 +108,20 @@ export function AuthProvider({ children }) {
     }
 
     localStorage.removeItem('echo_pending_email');
-    setUser({
-      $id:               sessionUserId,
-      email:             sessionEmail,
-      name:              sessionEmail,
-      emailVerification: true,
-    });
+
+    // Fetch real account data from Appwrite
+    try {
+      const currentUser = await account.get();
+      setUser(currentUser);
+    } catch {
+      setUser({
+        $id:               sessionUserId,
+        email:             sessionEmail,
+        name:              sessionEmail,
+        emailVerification: true,
+      });
+    }
+
     await fetchProfile(sessionUserId);
     setLoading(false);
   }
