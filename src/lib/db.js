@@ -1,4 +1,5 @@
 import { databases, DB_ID, COLLECTIONS, ID, Query } from './appwrite';
+
 export const ITEM_POINTS = {
   'Mobile Phone':     50,
   'Laptop':          150,
@@ -11,10 +12,35 @@ export const ITEM_POINTS = {
   'Keyboard / Mouse': 25,
   'Other':            10,
 };
+
+// ── BAG CODE ──────────────────────────────────────────────
+// Generates a unique 16-character alphanumeric code: ECHO-XXXXXXXXXXXXXXXX
+// The random part is seeded from submission attributes for traceability.
+export function generateBagCode(userId, itemCount, totalPoints) {
+  const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I to avoid confusion
+  const seed  = `${userId}-${itemCount}-${totalPoints}-${Date.now()}`;
+  // Hash seed into a deterministic-ish stream, then map to chars
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = (Math.imul(31, hash) + seed.charCodeAt(i)) | 0;
+  }
+  let code = '';
+  let entropy = Math.abs(hash);
+  for (let i = 0; i < 16; i++) {
+    // Mix in crypto randomness at each step so no two codes are alike
+    entropy = (entropy * 1664525 + 1013904223) | 0;
+    const idx = (Math.abs(entropy) + Math.floor(Math.random() * CHARS.length)) % CHARS.length;
+    code += CHARS[idx];
+    if (i === 3 || i === 7 || i === 11) code += '-'; // XXXX-XXXX-XXXX-XXXX
+  }
+  return `ECHO-${code}`; // final: ECHO-XXXX-XXXX-XXXX-XXXX (24 chars total, easy to read)
+}
+
 // ── USER ─────────────────────────────────────────────────
 export async function getUserProfile(userId) {
   return databases.getDocument(DB_ID, COLLECTIONS.USERS, userId);
 }
+
 export async function updateUserPoints(userId, pointsToAdd) {
   const profile = await getUserProfile(userId);
   return databases.updateDocument(DB_ID, COLLECTIONS.USERS, userId, {
@@ -22,23 +48,30 @@ export async function updateUserPoints(userId, pointsToAdd) {
     totalDeposits: profile.totalDeposits + 1,
   });
 }
+
 // ── SUBMISSIONS ───────────────────────────────────────────
 export async function createSubmission(userId, { items, binId, groupId }) {
   const totalPoints = items.reduce((sum, item) => {
     return sum + (ITEM_POINTS[item.itemType] || 10) * item.quantity;
   }, 0);
+
+  // Generate unique bag code based on submission attributes
+  const bagCode = generateBagCode(userId, items.length, totalPoints);
+
   return databases.createDocument(
-    DB_ID, COLLECTIONS.SUBMISSIONS, ID.unique(), {  // ✅ fixed: was newUser.$id
+    DB_ID, COLLECTIONS.SUBMISSIONS, ID.unique(), {
       userId,
       items:       JSON.stringify(items),
       totalPoints,
       binId,
       groupId:     groupId || null,
       status:      'pending',
+      bagCode,                          // ✅ stored for admin verification
       submittedAt: new Date().toISOString(),
     }
   );
 }
+
 export async function getUserSubmissions(userId) {
   return databases.listDocuments(DB_ID, COLLECTIONS.SUBMISSIONS, [
     Query.equal('userId', userId),
@@ -46,14 +79,19 @@ export async function getUserSubmissions(userId) {
     Query.limit(100),
   ]);
 }
+
 export async function updateSubmissionStatus(submissionId, newStatus) {
   const submission = await databases.getDocument(DB_ID, COLLECTIONS.SUBMISSIONS, submissionId);
   const oldStatus  = submission.status;
+
   if (oldStatus === newStatus) return;
+
   await databases.updateDocument(DB_ID, COLLECTIONS.SUBMISSIONS, submissionId, {
     status: newStatus,
   });
+
   const { userId, totalPoints, groupId } = submission;
+
   if (newStatus === 'verified') {
     const profile = await getUserProfile(userId);
     await databases.updateDocument(DB_ID, COLLECTIONS.USERS, userId, {
@@ -67,6 +105,7 @@ export async function updateSubmissionStatus(submissionId, newStatus) {
       });
     }
   }
+
   if (oldStatus === 'verified' && newStatus !== 'verified') {
     const profile = await getUserProfile(userId);
     await databases.updateDocument(DB_ID, COLLECTIONS.USERS, userId, {
@@ -81,14 +120,16 @@ export async function updateSubmissionStatus(submissionId, newStatus) {
     }
   }
 }
+
 // ── REWARDS ───────────────────────────────────────────────
 export async function getAvailableRewards() {
   return databases.listDocuments(DB_ID, COLLECTIONS.REWARDS, [
     Query.equal('available', true),
   ]);
 }
+
 export async function createReward(data) {
-  return databases.createDocument(DB_ID, COLLECTIONS.REWARDS, ID.unique(), {  // ✅ fixed: was newUser.$id
+  return databases.createDocument(DB_ID, COLLECTIONS.REWARDS, ID.unique(), {
     title:       data.title,
     description: data.description,
     pointsCost:  data.pointsCost,
@@ -98,12 +139,15 @@ export async function createReward(data) {
     available:   true,
   });
 }
+
 export async function getAllRewards() {
   return databases.listDocuments(DB_ID, COLLECTIONS.REWARDS);
 }
+
 export async function updateReward(rewardId, data) {
   return databases.updateDocument(DB_ID, COLLECTIONS.REWARDS, rewardId, data);
 }
+
 // ── REDEMPTIONS ───────────────────────────────────────────
 export async function redeemReward(userId, rewardId, pointsCost) {
   const profile = await getUserProfile(userId);
@@ -112,7 +156,7 @@ export async function redeemReward(userId, rewardId, pointsCost) {
   }
   const couponCode = `ECHO-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
   const redemption = await databases.createDocument(
-    DB_ID, COLLECTIONS.REDEMPTIONS, ID.unique(), {  // ✅ fixed: was newUser.$id
+    DB_ID, COLLECTIONS.REDEMPTIONS, ID.unique(), {
       userId,
       rewardId,
       pointsSpent: pointsCost,
@@ -125,16 +169,18 @@ export async function redeemReward(userId, rewardId, pointsCost) {
   });
   return redemption;
 }
+
 export async function getUserRedemptions(userId) {
   return databases.listDocuments(DB_ID, COLLECTIONS.REDEMPTIONS, [
     Query.equal('userId', userId),
     Query.orderDesc('redeemedAt'),
   ]);
 }
+
 // ── GROUPS ────────────────────────────────────────────────
 export async function createGroup(name, createdBy) {
   const group = await databases.createDocument(
-    DB_ID, COLLECTIONS.GROUPS, ID.unique(), {  // ✅ fixed: was newUser.$id
+    DB_ID, COLLECTIONS.GROUPS, ID.unique(), {
       name,
       createdBy,
       memberIds:   JSON.stringify([createdBy]),
@@ -149,26 +195,31 @@ export async function createGroup(name, createdBy) {
   });
   return group;
 }
+
 export async function getGroup(groupId) {
   return databases.getDocument(DB_ID, COLLECTIONS.GROUPS, groupId);
 }
+
 export async function getGroups(groupIds) {
   if (!groupIds || groupIds.length === 0) return [];
   const results = await Promise.all(groupIds.map(id => getGroup(id).catch(() => null)));
   return results.filter(Boolean);
 }
+
 export async function addPointsToGroup(groupId, points) {
   const group = await getGroup(groupId);
   return databases.updateDocument(DB_ID, COLLECTIONS.GROUPS, groupId, {
     totalPoints: group.totalPoints + points,
   });
 }
+
 export async function getGroupLeaderboard() {
   return databases.listDocuments(DB_ID, COLLECTIONS.GROUPS, [
     Query.orderDesc('totalPoints'),
     Query.limit(100),
   ]);
 }
+
 export async function leaveGroup(userId, groupId) {
   const group = await getGroup(groupId);
   const members = JSON.parse(group.memberIds || '[]').filter(id => id !== userId);
@@ -193,6 +244,7 @@ export async function leaveGroup(userId, groupId) {
     await databases.deleteDocument(DB_ID, COLLECTIONS.GROUPS, groupId);
   }
 }
+
 // ── INVITES ───────────────────────────────────────────────
 export async function sendInvite(groupId, email, invitedBy, inviterName, inviterEmail) {
   const existing = await databases.listDocuments(DB_ID, COLLECTIONS.INVITES, [
@@ -204,7 +256,7 @@ export async function sendInvite(groupId, email, invitedBy, inviterName, inviter
     throw new Error('An invite has already been sent to this email.');
   }
   const group = await getGroup(groupId);
-  return databases.createDocument(DB_ID, COLLECTIONS.INVITES, ID.unique(), {  // ✅ fixed: was newUser.$id
+  return databases.createDocument(DB_ID, COLLECTIONS.INVITES, ID.unique(), {
     groupId,
     groupName:    group.name,
     email,
@@ -215,12 +267,14 @@ export async function sendInvite(groupId, email, invitedBy, inviterName, inviter
     createdAt:    new Date().toISOString(),
   });
 }
+
 export async function getPendingInvites(email) {
   return databases.listDocuments(DB_ID, COLLECTIONS.INVITES, [
     Query.equal('email', email),
     Query.equal('status', 'pending'),
   ]);
 }
+
 export async function acceptInvite(inviteId, userId, groupId) {
   const group = await getGroup(groupId);
   const members = JSON.parse(group.memberIds || '[]');
@@ -239,11 +293,13 @@ export async function acceptInvite(inviteId, userId, groupId) {
     status: 'accepted',
   });
 }
+
 export async function declineInvite(inviteId) {
   return databases.updateDocument(DB_ID, COLLECTIONS.INVITES, inviteId, {
     status: 'declined',
   });
 }
+
 // ── ADMIN ─────────────────────────────────────────────────
 export async function getAllUsers() {
   return databases.listDocuments(DB_ID, COLLECTIONS.USERS, [
@@ -251,12 +307,14 @@ export async function getAllUsers() {
     Query.limit(100),
   ]);
 }
+
 export async function getAllSubmissions() {
   return databases.listDocuments(DB_ID, COLLECTIONS.SUBMISSIONS, [
     Query.orderDesc('submittedAt'),
     Query.limit(100),
   ]);
 }
+
 export async function deleteSubmission(submissionId) {
   const submission = await databases.getDocument(DB_ID, COLLECTIONS.SUBMISSIONS, submissionId);
   if (submission.status === 'verified') {

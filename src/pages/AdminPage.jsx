@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   Shield, Users, Recycle, Gift, Check, X,
-  Leaf, TrendingUp, Package, Trash2,
+  Leaf, TrendingUp, Package, Trash2, AlertTriangle,
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import {
@@ -11,7 +11,6 @@ import {
 } from '../lib/db';
 
 const STATUS_OPTIONS = ['pending', 'verified', 'rejected'];
-
 const statusStyle = {
   verified: 'bg-eco-100 text-eco-700',
   pending:  'bg-yellow-50 text-yellow-700',
@@ -19,7 +18,7 @@ const statusStyle = {
 };
 
 export default function AdminPage() {
-  const { user } = useAuth();
+  const { user, profile }             = useAuth();
   const [tab, setTab]                 = useState('overview');
   const [users, setUsers]             = useState([]);
   const [submissions, setSubmissions] = useState([]);
@@ -56,11 +55,24 @@ export default function AdminPage() {
     }
   }
 
+  // ── Feature 1: Admin cannot approve their own submissions ──
+  function isOwnSubmission(submission) {
+    // Match by userId or by email via the users list
+    if (submission.userId === user.$id) return true;
+    const submitter = users.find(u => u.userId === submission.userId || u.$id === submission.userId);
+    if (submitter && profile?.email && submitter.email === profile.email) return true;
+    return false;
+  }
+
   async function handleStatusChange(submission, newStatus) {
+    // Block admin from verifying their own submission
+    if (newStatus === 'verified' && isOwnSubmission(submission)) {
+      setError('You cannot approve your own submission. Ask another admin to verify it.');
+      return;
+    }
     setUpdatingId(submission.$id);
     try {
       await updateSubmissionStatus(submission.$id, newStatus);
-      // Update local state immediately
       setSubmissions(prev => prev.map(s =>
         s.$id === submission.$id ? { ...s, status: newStatus } : s
       ));
@@ -105,20 +117,19 @@ export default function AdminPage() {
     }
   }
 
-  const totalPoints  = users.reduce((sum, u) => sum + (u.points || 0), 0);
-  const pendingSubs  = submissions.filter(s => s.status === 'pending');
+  const totalPoints = users.reduce((sum, u) => sum + (u.points || 0), 0);
+  const pendingSubs = submissions.filter(s => s.status === 'pending');
 
   const tabs = [
-    { id: 'overview',    label: 'Overview',    icon: TrendingUp },
-    { id: 'submissions', label: 'Submissions',  icon: Recycle    },
-    { id: 'users',       label: 'Users',        icon: Users      },
-    { id: 'rewards',     label: 'Rewards',      icon: Gift       },
+    { id: 'overview',    label: 'Overview',   icon: TrendingUp },
+    { id: 'submissions', label: 'Submissions', icon: Recycle    },
+    { id: 'users',       label: 'Users',       icon: Users      },
+    { id: 'rewards',     label: 'Rewards',     icon: Gift       },
   ];
 
   return (
     <main className="pt-24 pb-16 px-6 bg-cream min-h-screen">
       <div className="max-w-6xl mx-auto">
-
         {/* Header */}
         <div className="mb-10">
           <span className="section-tag mb-3 inline-flex"><Shield className="w-3 h-3" />Admin</span>
@@ -127,8 +138,11 @@ export default function AdminPage() {
         </div>
 
         {error && (
-          <div className="bg-red-50 border border-red-100 text-red-700 rounded-2xl p-4 mb-6 font-body text-sm flex items-center justify-between">
-            {error}
+          <div className="bg-red-50 border border-red-100 text-red-700 rounded-2xl p-4 mb-6 font-body text-sm flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              {error}
+            </div>
             <button onClick={() => setError('')}><X className="w-4 h-4" /></button>
           </div>
         )}
@@ -140,9 +154,7 @@ export default function AdminPage() {
               key={id}
               onClick={() => setTab(id)}
               className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl font-display font-semibold text-sm transition-all duration-200 ${
-                tab === id
-                  ? 'bg-moss text-cream shadow-sm'
-                  : 'bg-white border border-eco-100 text-bark/65 hover:border-moss/40'
+                tab === id ? 'bg-moss text-cream shadow-sm' : 'bg-white border border-eco-100 text-bark/65 hover:border-moss/40'
               }`}
             >
               <Icon className="w-4 h-4" strokeWidth={1.5} />
@@ -166,10 +178,10 @@ export default function AdminPage() {
             {tab === 'overview' && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
                 {[
-                  { label: 'Total Users',        value: users.length,       icon: Users,     color: 'text-moss',        bg: 'bg-moss/10'     },
-                  { label: 'Total Submissions',   value: submissions.length, icon: Recycle,   color: 'text-eco-600',     bg: 'bg-eco-100'     },
-                  { label: 'Pending Review',      value: pendingSubs.length, icon: Package,   color: 'text-yellow-600',  bg: 'bg-yellow-50'   },
-                  { label: 'Points Distributed',  value: totalPoints,        icon: Leaf,      color: 'text-leaf',        bg: 'bg-leaf/10'     },
+                  { label: 'Total Users',       value: users.length,       icon: Users,   color: 'text-moss',       bg: 'bg-moss/10'   },
+                  { label: 'Total Submissions',  value: submissions.length, icon: Recycle, color: 'text-eco-600',    bg: 'bg-eco-100'   },
+                  { label: 'Pending Review',     value: pendingSubs.length, icon: Package, color: 'text-yellow-600', bg: 'bg-yellow-50' },
+                  { label: 'Points Distributed', value: totalPoints,        icon: Leaf,    color: 'text-leaf',       bg: 'bg-leaf/10'   },
                 ].map(({ label, value, icon: Icon, color, bg }) => (
                   <div key={label} className="bg-white rounded-3xl p-7 border border-eco-100 shadow-sm">
                     <div className={`w-11 h-11 ${bg} rounded-2xl flex items-center justify-center mb-4`}>
@@ -194,45 +206,77 @@ export default function AdminPage() {
                 ) : (
                   <div className="space-y-0">
                     {submissions.map(sub => {
-                      const items = (() => { try { return JSON.parse(sub.items); } catch { return []; } })();
+                      const items      = (() => { try { return JSON.parse(sub.items); } catch { return []; } })();
                       const isUpdating = updatingId === sub.$id;
+                      const isOwn      = isOwnSubmission(sub);   // Feature 1
+
                       return (
-                        <div key={sub.$id} className="flex items-center justify-between py-4 border-b border-eco-50 last:border-0 gap-3">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex flex-wrap gap-1 mb-1">
-                              {items.map((item, i) => (
-                                <span key={i} className="font-body text-xs bg-eco-50 text-bark/70 px-2 py-0.5 rounded-full">
-                                  {item.itemType} ×{item.quantity}
-                                </span>
-                              ))}
-                            </div>
-                            <p className="font-mono text-xs text-bark/40">
-                              {sub.userId} · {new Date(sub.submittedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className="font-display font-semibold text-sm text-eco-600">
-                              {sub.status === 'verified' ? '+' : ''}{sub.totalPoints} pts
-                            </span>
-                            {/* Status dropdown */}
-                            <div className="relative">
-                              <select
-                                value={sub.status}
-                                disabled={isUpdating}
-                                onChange={e => handleStatusChange(sub, e.target.value)}
-                                className={`appearance-none font-mono text-xs px-3 py-1.5 rounded-xl border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-moss/30 transition-all disabled:opacity-50 ${statusStyle[sub.status] || 'bg-eco-50 text-bark/50'}`}
-                              >
-                                {STATUS_OPTIONS.map(s => (
-                                  <option key={s} value={s}>{s}</option>
+                        <div key={sub.$id} className={`py-4 border-b border-eco-50 last:border-0 gap-3 ${isOwn ? 'opacity-75' : ''}`}>
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex flex-wrap gap-1 mb-1">
+                                {items.map((item, i) => (
+                                  <span key={i} className="font-body text-xs bg-eco-50 text-bark/70 px-2 py-0.5 rounded-full">
+                                    {item.itemType} ×{item.quantity}
+                                  </span>
                                 ))}
-                              </select>
+                              </div>
+                              <p className="font-mono text-xs text-bark/40">
+                                {sub.userId} · {new Date(sub.submittedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                              </p>
                             </div>
-                            <button
-                              onClick={() => handleDeleteSubmission(sub)}
-                              className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 transition-colors group"
-                            >
-                              <Trash2 className="w-3.5 h-3.5 text-bark/30 group-hover:text-red-400 transition-colors" />
-                            </button>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="font-display font-semibold text-sm text-eco-600">
+                                {sub.status === 'verified' ? '+' : ''}{sub.totalPoints} pts
+                              </span>
+                              {/* Status dropdown — verify disabled for own submissions */}
+                              <div className="relative group">
+                                <select
+                                  value={sub.status}
+                                  disabled={isUpdating}
+                                  onChange={e => handleStatusChange(sub, e.target.value)}
+                                  className={`appearance-none font-mono text-xs px-3 py-1.5 rounded-xl border-0 focus:outline-none focus:ring-2 focus:ring-moss/30 transition-all disabled:opacity-50 ${
+                                    isOwn && sub.status === 'pending'
+                                      ? 'cursor-not-allowed bg-bark/10 text-bark/40'
+                                      : `cursor-pointer ${statusStyle[sub.status] || 'bg-eco-50 text-bark/50'}`
+                                  }`}
+                                >
+                                  {STATUS_OPTIONS.map(s => (
+                                    // Disable the 'verified' option for own submissions
+                                    <option key={s} value={s} disabled={s === 'verified' && isOwn}>
+                                      {s}{s === 'verified' && isOwn ? ' (not allowed)' : ''}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <button
+                                onClick={() => handleDeleteSubmission(sub)}
+                                className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 transition-colors group"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-bark/30 group-hover:text-red-400 transition-colors" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* ── Feature 2: Bag code display ── */}
+                          <div className="mt-2 flex items-center flex-wrap gap-3">
+                            {sub.bagCode ? (
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-xs text-bark/35">Bag code:</span>
+                                <span className="font-mono text-xs font-bold text-moss bg-eco-50 border border-eco-200 px-3 py-1 rounded-lg tracking-widest">
+                                  {sub.bagCode}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="font-mono text-xs text-bark/25 italic">No bag code (old submission)</span>
+                            )}
+                            {/* Own submission warning */}
+                            {isOwn && (
+                              <div className="flex items-center gap-1.5 bg-yellow-50 border border-yellow-100 text-yellow-700 rounded-xl px-3 py-1">
+                                <AlertTriangle className="w-3 h-3 shrink-0" />
+                                <span className="font-mono text-xs">Your submission — cannot verify</span>
+                              </div>
+                            )}
                           </div>
                         </div>
                       );
@@ -260,9 +304,7 @@ export default function AdminPage() {
                           <p className="font-mono text-xs text-bark/40">{u.email}</p>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          <span className="font-mono text-xs font-bold text-eco-600 bg-eco-50 px-2.5 py-1 rounded-full">
-                            {u.points} pts
-                          </span>
+                          <span className="font-mono text-xs font-bold text-eco-600 bg-eco-50 px-2.5 py-1 rounded-full">{u.points} pts</span>
                           {u.isAdmin && (
                             <span className="font-mono text-xs bg-moss/10 text-moss px-2.5 py-1 rounded-full">admin</span>
                           )}
@@ -292,7 +334,6 @@ export default function AdminPage() {
                     {showRewardForm ? 'Cancel' : 'Add Reward'}
                   </button>
                 </div>
-
                 {showRewardForm && (
                   <div className="bg-white rounded-3xl border border-eco-100 p-7">
                     <h3 className="font-display font-semibold text-moss mb-5">New Reward</h3>
@@ -342,7 +383,6 @@ export default function AdminPage() {
                     </form>
                   </div>
                 )}
-
                 <div className="bg-white rounded-3xl border border-eco-100 p-7">
                   {rewards.length === 0 ? (
                     <p className="font-body text-bark/45 text-sm text-center py-10">No rewards yet. Add one above!</p>
