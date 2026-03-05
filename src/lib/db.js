@@ -1,5 +1,4 @@
 import { account, functions } from './appwrite';
-import { ExecutionMethod } from 'appwrite';
 
 const FN_ID = '69a9b6a5003ae8c2400e';
 
@@ -37,7 +36,7 @@ async function _execute(domain, action, payload, isGuest) {
       body,
       false,            // async = false (wait for result)
       '/',              // path
-      ExecutionMethod.POST,
+      'POST',
     );
   } catch (e) {
     throw new Error('Could not reach server function: ' + e.message);
