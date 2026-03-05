@@ -1,4 +1,4 @@
-import { account, functions } from './appwrite';
+import { functions } from './appwrite';
 
 const FN_ID = '69a9b6a5003ae8c2400e';
 
@@ -15,28 +15,23 @@ export const ITEM_POINTS = {
   'Other':            10,
 };
 
-// ── CORE CALLERS ─────────────────────────────────────────
-
-// Authenticated call — requires active session
-async function call(domain, action, payload = {}) {
-  return _execute(domain, action, payload, false);
-}
-
-// Guest call — no session required
-async function callGuest(domain, action, payload = {}) {
-  return _execute(domain, action, payload, true);
-}
-
-async function _execute(domain, action, payload, isGuest) {
+// ── CORE CALLER ───────────────────────────────────────────
+// Single _execute function — Appwrite SDK v16 handles auth automatically
+// via the active session (cookie/JWT managed by SDK internally).
+// No need to manually attach JWTs — the SDK does it.
+async function _execute(domain, action, payload = {}) {
   const body = JSON.stringify({ domain, action, payload });
+
   let execution;
   try {
+    // Appwrite SDK v16: createExecution(functionId, body, async, path, method, headers)
     execution = await functions.createExecution(
-      FN_ID,
-      body,
-      false,            // async = false (wait for result)
-      '/',              // path
-      'POST',
+      FN_ID,   // functionId
+      body,    // body
+      false,   // async — wait for result
+      '/',     // path
+      'POST',  // method
+      {},      // headers
     );
   } catch (e) {
     throw new Error('Could not reach server function: ' + e.message);
@@ -49,7 +44,7 @@ async function _execute(domain, action, payload, isGuest) {
   try {
     result = JSON.parse(raw);
   } catch {
-    throw new Error('Invalid JSON from server function: ' + raw.slice(0, 100));
+    throw new Error('Server returned invalid response: ' + raw.slice(0, 150));
   }
 
   if (!result.success) {
@@ -60,136 +55,110 @@ async function _execute(domain, action, payload, isGuest) {
 }
 
 // ── USERS ─────────────────────────────────────────────────
-export async function createUserProfile(userId, name, email) {
-  return call('users', 'createProfile', { name, email });
+export async function createUserProfile(name, email) {
+  return _execute('users', 'createProfile', { name, email });
 }
-
 export async function getUserProfile() {
-  return call('users', 'getProfile');
+  return _execute('users', 'getProfile');
 }
-
 export async function updateUserProfile(name) {
-  return call('users', 'updateProfile', { name });
+  return _execute('users', 'updateProfile', { name });
 }
-
 export async function setVerified() {
-  return call('users', 'setVerified');
+  return _execute('users', 'setVerified');
 }
-
 export async function getAllUsers() {
-  return call('users', 'getAllUsers');
+  return _execute('users', 'getAllUsers');
 }
-
 export async function getUserByEmail(email) {
-  return callGuest('users', 'getUserByEmail', { email });
+  return _execute('users', 'getUserByEmail', { email });
 }
 
 // ── SUBMISSIONS ───────────────────────────────────────────
-export async function createSubmission(userId, { items, binId, groupId }) {
-  return call('submissions', 'create', { items, binId, groupId });
+export async function createSubmission(_userId, { items, binId, groupId }) {
+  return _execute('submissions', 'create', { items, binId, groupId });
 }
-
 export async function getUserSubmissions() {
-  return call('submissions', 'getMySubmissions');
+  return _execute('submissions', 'getMySubmissions');
 }
-
 export async function getAllSubmissions() {
-  return call('submissions', 'getAll');
+  return _execute('submissions', 'getAll');
 }
-
 export async function updateSubmissionStatus(submissionId, newStatus) {
-  return call('submissions', 'updateStatus', { submissionId, newStatus });
+  return _execute('submissions', 'updateStatus', { submissionId, newStatus });
 }
-
 export async function deleteSubmission(submissionId) {
-  return call('submissions', 'delete', { submissionId });
+  return _execute('submissions', 'delete', { submissionId });
 }
 
 // ── REWARDS ───────────────────────────────────────────────
 export async function getAvailableRewards() {
-  return call('rewards', 'getAvailable');
+  return _execute('rewards', 'getAvailable');
 }
-
 export async function getAllRewards() {
-  return call('rewards', 'getAll');
+  return _execute('rewards', 'getAll');
 }
-
 export async function createReward(data) {
-  return call('rewards', 'create', data);
+  return _execute('rewards', 'create', data);
 }
-
 export async function updateReward(rewardId, data) {
-  return call('rewards', 'update', { rewardId, data });
+  return _execute('rewards', 'update', { rewardId, data });
 }
-
 export async function deleteReward(rewardId) {
-  return call('rewards', 'delete', { rewardId });
+  return _execute('rewards', 'delete', { rewardId });
 }
 
 // ── COUPON CODES ──────────────────────────────────────────
 export async function addCouponCodesToReward(rewardId, codes) {
-  return call('coupons', 'addCodes', { rewardId, codes });
+  return _execute('coupons', 'addCodes', { rewardId, codes });
 }
-
 export async function getCouponCodesForReward(rewardId) {
-  return call('coupons', 'getCodes', { rewardId });
+  return _execute('coupons', 'getCodes', { rewardId });
 }
-
 export async function getAvailableCodeCount(rewardId) {
-  const res = await call('coupons', 'getCount', { rewardId });
+  const res = await _execute('coupons', 'getCount', { rewardId });
   return res.count;
 }
-
 export async function getAvailableCodeCounts(rewardIds) {
-  return call('coupons', 'getCounts', { rewardIds });
+  return _execute('coupons', 'getCounts', { rewardIds });
 }
-
 export async function deleteCouponCode(codeId) {
-  return call('coupons', 'deleteCode', { codeId });
+  return _execute('coupons', 'deleteCode', { codeId });
 }
 
 // ── REDEMPTIONS ───────────────────────────────────────────
-export async function redeemReward(userId, rewardId, pointsCost) {
-  return call('redemptions', 'redeem', { rewardId, pointsCost });
+export async function redeemReward(_userId, rewardId, pointsCost) {
+  return _execute('redemptions', 'redeem', { rewardId, pointsCost });
 }
-
 export async function getUserRedemptions() {
-  return call('redemptions', 'getMyRedemptions');
+  return _execute('redemptions', 'getMyRedemptions');
 }
 
 // ── GROUPS ────────────────────────────────────────────────
 export async function createGroup(name) {
-  return call('groups', 'create', { name });
+  return _execute('groups', 'create', { name });
 }
-
 export async function getGroup(groupId) {
-  return call('groups', 'get', { groupId });
+  return _execute('groups', 'get', { groupId });
 }
-
 export async function getGroups(groupIds) {
-  return call('groups', 'getMultiple', { groupIds });
+  return _execute('groups', 'getMultiple', { groupIds });
 }
-
 export async function getGroupLeaderboard() {
-  return call('groups', 'leaderboard');
+  return _execute('groups', 'leaderboard');
 }
-
-export async function leaveGroup(userId, groupId) {
-  return call('groups', 'leave', { groupId });
+export async function leaveGroup(_userId, groupId) {
+  return _execute('groups', 'leave', { groupId });
 }
-
-export async function sendInvite(groupId, email, invitedBy, inviterName, inviterEmail) {
-  return call('groups', 'sendInvite', { groupId, email, inviterName, inviterEmail });
+export async function sendInvite(groupId, email, _invitedBy, inviterName, inviterEmail) {
+  return _execute('groups', 'sendInvite', { groupId, email, inviterName, inviterEmail });
 }
-
 export async function getPendingInvites(email) {
-  return call('groups', 'getPendingInvites', { email });
+  return _execute('groups', 'getPendingInvites', { email });
 }
-
-export async function acceptInvite(inviteId, userId, groupId) {
-  return call('groups', 'acceptInvite', { inviteId, groupId });
+export async function acceptInvite(inviteId, _userId, groupId) {
+  return _execute('groups', 'acceptInvite', { inviteId, groupId });
 }
-
 export async function declineInvite(inviteId) {
-  return call('groups', 'declineInvite', { inviteId });
+  return _execute('groups', 'declineInvite', { inviteId });
 }

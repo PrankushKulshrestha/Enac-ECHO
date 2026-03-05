@@ -1,13 +1,13 @@
-import { Client, Databases, Users, Teams, ID, Query } from 'node-appwrite';
+import { Client, Databases, Users, Teams, Account, ID, Query } from 'node-appwrite';
 
-// ── INIT ──────────────────────────────────────────────────
+// ── ENV ───────────────────────────────────────────────────
 const ENDPOINT   = process.env.APPWRITE_ENDPOINT;
 const PROJECT_ID = process.env.APPWRITE_PROJECT_ID;
 const API_KEY    = process.env.APPWRITE_API_KEY;
 const DB_ID      = process.env.APPWRITE_DB_ID;
 const ADMIN_TEAM = process.env.ADMIN_TEAM_ID;
 
-const COLLECTIONS = {
+const COLS = {
   USERS:        'users',
   SUBMISSIONS:  'submissions',
   REWARDS:      'rewards',
@@ -30,30 +30,28 @@ const ITEM_POINTS = {
   'Other':            10,
 };
 
-// ── SERVER CLIENT (full API key access) ───────────────────
-function getServerClient() {
-  const client = new Client()
+// ── CLIENTS ───────────────────────────────────────────────
+// Server client — full API key access for all DB operations
+function serverClient() {
+  return new Client()
     .setEndpoint(ENDPOINT)
     .setProject(PROJECT_ID)
     .setKey(API_KEY);
-  return client;
 }
 
-// ── USER CLIENT (scoped to caller's JWT) ─────────────────
-function getUserClient(jwt) {
-  const client = new Client()
+// User client — scoped to the caller's session via JWT
+function userClient(jwt) {
+  return new Client()
     .setEndpoint(ENDPOINT)
     .setProject(PROJECT_ID)
     .setJWT(jwt);
-  return client;
 }
 
+const db = () => new Databases(serverClient());
+
 // ── AUTH HELPERS ──────────────────────────────────────────
-async function getCallerUserId(jwt) {
-  const client    = getUserClient(jwt);
-  const databases = new Databases(client);
-  // Use the user-scoped client to get account — if JWT is invalid this throws
-  const { Account } = await import('node-appwrite');
+async function getUserId(jwt) {
+  const client  = userClient(jwt);
   const account = new Account(client);
   const user    = await account.get();
   return user.$id;
@@ -61,9 +59,8 @@ async function getCallerUserId(jwt) {
 
 async function isAdmin(userId) {
   try {
-    const client = getServerClient();
-    const teams  = new Teams(client);
-    const list   = await teams.listMemberships(ADMIN_TEAM);
+    const teams = new Teams(serverClient());
+    const list  = await teams.listMemberships(ADMIN_TEAM);
     return list.memberships.some(m => m.userId === userId && m.confirm === true);
   } catch {
     return false;
@@ -71,8 +68,9 @@ async function isAdmin(userId) {
 }
 
 async function requireAdmin(userId) {
-  const admin = await isAdmin(userId);
-  if (!admin) throw new Error('UNAUTHORIZED: Admin access required.');
+  if (!(await isAdmin(userId))) {
+    throw new Error('UNAUTHORIZED: Admin access required.');
+  }
 }
 
 // ── BAG CODE ──────────────────────────────────────────────
@@ -87,147 +85,111 @@ function generateBagCode(userId, itemCount, totalPoints) {
   let entropy = Math.abs(hash);
   for (let i = 0; i < 16; i++) {
     entropy = (entropy * 1664525 + 1013904223) | 0;
-    const idx = (Math.abs(entropy) + Math.floor(Math.random() * CHARS.length)) % CHARS.length;
-    code += CHARS[idx];
+    code += CHARS[(Math.abs(entropy) + Math.floor(Math.random() * CHARS.length)) % CHARS.length];
     if (i === 3 || i === 7 || i === 11) code += '-';
   }
   return `ECHO-${code}`;
 }
 
-// ── HANDLERS ──────────────────────────────────────────────
+// ── DOMAIN HANDLERS ───────────────────────────────────────
 
-// USERS
 async function handleUsers(action, payload, userId) {
-  const db     = new Databases(getServerClient());
-  const users  = new Users(getServerClient());
-
   switch (action) {
 
     case 'createProfile': {
       const { name, email } = payload;
-      // Check if profile already exists
-      try {
-        const existing = await db.getDocument(DB_ID, COLLECTIONS.USERS, userId);
-        return existing;
-      } catch {}
-      return db.createDocument(DB_ID, COLLECTIONS.USERS, userId, {
-        userId,
-        name,
-        email,
-        points:        0,
-        totalDeposits: 0,
-        isVerified:    false,
-        isAdmin:       false,
-        createdAt:     new Date().toISOString(),
+      try { return await db().getDocument(DB_ID, COLS.USERS, userId); } catch {}
+      return db().createDocument(DB_ID, COLS.USERS, userId, {
+        userId, name, email,
+        points: 0, totalDeposits: 0,
+        isVerified: false, isAdmin: false,
+        createdAt: new Date().toISOString(),
       });
     }
 
-    case 'getProfile': {
-      return db.getDocument(DB_ID, COLLECTIONS.USERS, userId);
-    }
+    case 'getProfile':
+      return db().getDocument(DB_ID, COLS.USERS, userId);
 
-    case 'updateProfile': {
-      const { name } = payload;
-      return db.updateDocument(DB_ID, COLLECTIONS.USERS, userId, { name });
-    }
+    case 'updateProfile':
+      return db().updateDocument(DB_ID, COLS.USERS, userId, { name: payload.name });
 
-    case 'setVerified': {
-      return db.updateDocument(DB_ID, COLLECTIONS.USERS, userId, { isVerified: true });
-    }
+    case 'setVerified':
+      return db().updateDocument(DB_ID, COLS.USERS, userId, { isVerified: true });
 
-    case 'getAllUsers': {
+    case 'getAllUsers':
       await requireAdmin(userId);
-      return db.listDocuments(DB_ID, COLLECTIONS.USERS, [
-        Query.orderDesc('$createdAt'),
-        Query.limit(100),
+      return db().listDocuments(DB_ID, COLS.USERS, [
+        Query.orderDesc('$createdAt'), Query.limit(100),
       ]);
-    }
 
-    case 'getUserByEmail': {
-      const { email } = payload;
-      return db.listDocuments(DB_ID, COLLECTIONS.USERS, [
-        Query.equal('email', email),
-        Query.limit(1),
+    case 'getUserByEmail':
+      // No auth required — used during login before session exists
+      return db().listDocuments(DB_ID, COLS.USERS, [
+        Query.equal('email', payload.email), Query.limit(1),
       ]);
-    }
 
-    default:
-      throw new Error(`Unknown action: ${action}`);
+    default: throw new Error(`Unknown action: users.${action}`);
   }
 }
 
-// SUBMISSIONS
 async function handleSubmissions(action, payload, userId) {
-  const db = new Databases(getServerClient());
-
   switch (action) {
 
     case 'create': {
       const { items, binId, groupId } = payload;
-      const totalPoints = items.reduce((sum, item) =>
-        sum + (ITEM_POINTS[item.itemType] || 10) * item.quantity, 0);
+      const totalPoints = items.reduce((s, i) =>
+        s + (ITEM_POINTS[i.itemType] || 10) * i.quantity, 0);
       const bagCode = generateBagCode(userId, items.length, totalPoints);
-      return db.createDocument(DB_ID, COLLECTIONS.SUBMISSIONS, ID.unique(), {
-        userId,
-        items:       JSON.stringify(items),
-        totalPoints,
-        binId,
-        groupId:     groupId || null,
-        status:      'pending',
-        bagCode,
+      return db().createDocument(DB_ID, COLS.SUBMISSIONS, ID.unique(), {
+        userId, items: JSON.stringify(items), totalPoints, binId,
+        groupId: groupId || null, status: 'pending', bagCode,
         submittedAt: new Date().toISOString(),
       });
     }
 
-    case 'getMySubmissions': {
-      return db.listDocuments(DB_ID, COLLECTIONS.SUBMISSIONS, [
-        Query.equal('userId', userId),
-        Query.orderDesc('submittedAt'),
-        Query.limit(100),
+    case 'getMySubmissions':
+      return db().listDocuments(DB_ID, COLS.SUBMISSIONS, [
+        Query.equal('userId', userId), Query.orderDesc('submittedAt'), Query.limit(100),
       ]);
-    }
 
-    case 'getAll': {
+    case 'getAll':
       await requireAdmin(userId);
-      return db.listDocuments(DB_ID, COLLECTIONS.SUBMISSIONS, [
-        Query.orderDesc('submittedAt'),
-        Query.limit(100),
+      return db().listDocuments(DB_ID, COLS.SUBMISSIONS, [
+        Query.orderDesc('submittedAt'), Query.limit(100),
       ]);
-    }
 
     case 'updateStatus': {
       await requireAdmin(userId);
       const { submissionId, newStatus } = payload;
-      const submission = await db.getDocument(DB_ID, COLLECTIONS.SUBMISSIONS, submissionId);
-      const oldStatus  = submission.status;
-      if (oldStatus === newStatus) return submission;
+      const sub      = await db().getDocument(DB_ID, COLS.SUBMISSIONS, submissionId);
+      const oldStatus = sub.status;
+      if (oldStatus === newStatus) return sub;
 
-      await db.updateDocument(DB_ID, COLLECTIONS.SUBMISSIONS, submissionId, { status: newStatus });
+      await db().updateDocument(DB_ID, COLS.SUBMISSIONS, submissionId, { status: newStatus });
 
-      const { userId: ownerId, totalPoints, groupId } = submission;
-      const profile = await db.getDocument(DB_ID, COLLECTIONS.USERS, ownerId);
+      const profile = await db().getDocument(DB_ID, COLS.USERS, sub.userId);
 
       if (newStatus === 'verified') {
-        await db.updateDocument(DB_ID, COLLECTIONS.USERS, ownerId, {
-          points:        profile.points + totalPoints,
+        await db().updateDocument(DB_ID, COLS.USERS, sub.userId, {
+          points:        profile.points + sub.totalPoints,
           totalDeposits: profile.totalDeposits + 1,
         });
-        if (groupId) {
-          const group = await db.getDocument(DB_ID, COLLECTIONS.GROUPS, groupId);
-          await db.updateDocument(DB_ID, COLLECTIONS.GROUPS, groupId, {
-            totalPoints: group.totalPoints + totalPoints,
+        if (sub.groupId) {
+          const grp = await db().getDocument(DB_ID, COLS.GROUPS, sub.groupId);
+          await db().updateDocument(DB_ID, COLS.GROUPS, sub.groupId, {
+            totalPoints: grp.totalPoints + sub.totalPoints,
           });
         }
       }
       if (oldStatus === 'verified' && newStatus !== 'verified') {
-        await db.updateDocument(DB_ID, COLLECTIONS.USERS, ownerId, {
-          points:        Math.max(0, profile.points - totalPoints),
+        await db().updateDocument(DB_ID, COLS.USERS, sub.userId, {
+          points:        Math.max(0, profile.points - sub.totalPoints),
           totalDeposits: Math.max(0, profile.totalDeposits - 1),
         });
-        if (groupId) {
-          const group = await db.getDocument(DB_ID, COLLECTIONS.GROUPS, groupId);
-          await db.updateDocument(DB_ID, COLLECTIONS.GROUPS, groupId, {
-            totalPoints: Math.max(0, group.totalPoints - totalPoints),
+        if (sub.groupId) {
+          const grp = await db().getDocument(DB_ID, COLS.GROUPS, sub.groupId);
+          await db().updateDocument(DB_ID, COLS.GROUPS, sub.groupId, {
+            totalPoints: Math.max(0, grp.totalPoints - sub.totalPoints),
           });
         }
       }
@@ -236,117 +198,96 @@ async function handleSubmissions(action, payload, userId) {
 
     case 'delete': {
       const { submissionId } = payload;
-      const submission = await db.getDocument(DB_ID, COLLECTIONS.SUBMISSIONS, submissionId);
-      // Only owner or admin can delete
+      const sub   = await db().getDocument(DB_ID, COLS.SUBMISSIONS, submissionId);
       const admin = await isAdmin(userId);
-      if (submission.userId !== userId && !admin) throw new Error('UNAUTHORIZED');
+      if (sub.userId !== userId && !admin) throw new Error('UNAUTHORIZED');
 
-      if (submission.status === 'verified') {
-        const profile = await db.getDocument(DB_ID, COLLECTIONS.USERS, submission.userId);
-        await db.updateDocument(DB_ID, COLLECTIONS.USERS, submission.userId, {
-          points:        Math.max(0, profile.points - submission.totalPoints),
+      if (sub.status === 'verified') {
+        const profile = await db().getDocument(DB_ID, COLS.USERS, sub.userId);
+        await db().updateDocument(DB_ID, COLS.USERS, sub.userId, {
+          points:        Math.max(0, profile.points - sub.totalPoints),
           totalDeposits: Math.max(0, profile.totalDeposits - 1),
         });
-        if (submission.groupId) {
-          const group = await db.getDocument(DB_ID, COLLECTIONS.GROUPS, submission.groupId);
-          await db.updateDocument(DB_ID, COLLECTIONS.GROUPS, submission.groupId, {
-            totalPoints: Math.max(0, group.totalPoints - submission.totalPoints),
+        if (sub.groupId) {
+          const grp = await db().getDocument(DB_ID, COLS.GROUPS, sub.groupId);
+          await db().updateDocument(DB_ID, COLS.GROUPS, sub.groupId, {
+            totalPoints: Math.max(0, grp.totalPoints - sub.totalPoints),
           });
         }
       }
-      await db.deleteDocument(DB_ID, COLLECTIONS.SUBMISSIONS, submissionId);
+      await db().deleteDocument(DB_ID, COLS.SUBMISSIONS, submissionId);
       return { success: true };
     }
 
-    default:
-      throw new Error(`Unknown action: ${action}`);
+    default: throw new Error(`Unknown action: submissions.${action}`);
   }
 }
 
-// REWARDS
 async function handleRewards(action, payload, userId) {
-  const db = new Databases(getServerClient());
-
   switch (action) {
 
-    case 'getAvailable': {
-      return db.listDocuments(DB_ID, COLLECTIONS.REWARDS, [
-        Query.equal('available', true),
-      ]);
-    }
+    case 'getAvailable':
+      return db().listDocuments(DB_ID, COLS.REWARDS, [Query.equal('available', true)]);
 
-    case 'getAll': {
+    case 'getAll':
       await requireAdmin(userId);
-      return db.listDocuments(DB_ID, COLLECTIONS.REWARDS, [Query.limit(100)]);
-    }
+      return db().listDocuments(DB_ID, COLS.REWARDS, [Query.limit(100)]);
 
-    case 'create': {
+    case 'create':
       await requireAdmin(userId);
-      const { title, description, pointsCost, partner, brandName, logoUrl } = payload;
-      return db.createDocument(DB_ID, COLLECTIONS.REWARDS, ID.unique(), {
-        title, description, pointsCost, partner, brandName,
-        logoUrl: logoUrl || null,
-        available: true,
+      return db().createDocument(DB_ID, COLS.REWARDS, ID.unique(), {
+        title:       payload.title,
+        description: payload.description,
+        pointsCost:  payload.pointsCost,
+        partner:     payload.partner,
+        brandName:   payload.brandName,
+        logoUrl:     payload.logoUrl || null,
+        available:   true,
       });
-    }
 
-    case 'update': {
+    case 'update':
       await requireAdmin(userId);
-      const { rewardId, data } = payload;
-      return db.updateDocument(DB_ID, COLLECTIONS.REWARDS, rewardId, data);
-    }
+      return db().updateDocument(DB_ID, COLS.REWARDS, payload.rewardId, payload.data);
 
     case 'delete': {
       await requireAdmin(userId);
-      const { rewardId } = payload;
-      // Cascade delete coupon codes
-      const codes = await db.listDocuments(DB_ID, COLLECTIONS.COUPON_CODES, [
-        Query.equal('rewardId', rewardId),
-        Query.limit(500),
+      const codes = await db().listDocuments(DB_ID, COLS.COUPON_CODES, [
+        Query.equal('rewardId', payload.rewardId), Query.limit(500),
       ]);
       await Promise.all(codes.documents.map(c =>
-        db.deleteDocument(DB_ID, COLLECTIONS.COUPON_CODES, c.$id)
+        db().deleteDocument(DB_ID, COLS.COUPON_CODES, c.$id)
       ));
-      await db.deleteDocument(DB_ID, COLLECTIONS.REWARDS, rewardId);
+      await db().deleteDocument(DB_ID, COLS.REWARDS, payload.rewardId);
       return { success: true };
     }
 
-    default:
-      throw new Error(`Unknown action: ${action}`);
+    default: throw new Error(`Unknown action: rewards.${action}`);
   }
 }
 
-// COUPONS
 async function handleCoupons(action, payload, userId) {
-  const db = new Databases(getServerClient());
-
   switch (action) {
 
     case 'addCodes': {
       await requireAdmin(userId);
       const { rewardId, codes } = payload;
       const creates = codes
-        .map(c => c.trim())
-        .filter(c => c !== '')
-        .map(code => db.createDocument(DB_ID, COLLECTIONS.COUPON_CODES, ID.unique(), {
+        .map(c => c.trim()).filter(c => c !== '')
+        .map(code => db().createDocument(DB_ID, COLS.COUPON_CODES, ID.unique(), {
           rewardId, code, isUsed: false, usedBy: null, usedAt: null,
         }));
       return Promise.all(creates);
     }
 
-    case 'getCodes': {
+    case 'getCodes':
       await requireAdmin(userId);
-      const { rewardId } = payload;
-      return db.listDocuments(DB_ID, COLLECTIONS.COUPON_CODES, [
-        Query.equal('rewardId', rewardId),
-        Query.limit(500),
+      return db().listDocuments(DB_ID, COLS.COUPON_CODES, [
+        Query.equal('rewardId', payload.rewardId), Query.limit(500),
       ]);
-    }
 
     case 'getCount': {
-      const { rewardId } = payload;
-      const res = await db.listDocuments(DB_ID, COLLECTIONS.COUPON_CODES, [
-        Query.equal('rewardId', rewardId),
+      const res = await db().listDocuments(DB_ID, COLS.COUPON_CODES, [
+        Query.equal('rewardId', payload.rewardId),
         Query.equal('isUsed', false),
         Query.limit(1),
       ]);
@@ -354,12 +295,9 @@ async function handleCoupons(action, payload, userId) {
     }
 
     case 'getCounts': {
-      const { rewardIds } = payload;
-      const counts = await Promise.all(rewardIds.map(async id => {
-        const res = await db.listDocuments(DB_ID, COLLECTIONS.COUPON_CODES, [
-          Query.equal('rewardId', id),
-          Query.equal('isUsed', false),
-          Query.limit(1),
+      const counts = await Promise.all(payload.rewardIds.map(async id => {
+        const res = await db().listDocuments(DB_ID, COLS.COUPON_CODES, [
+          Query.equal('rewardId', id), Query.equal('isUsed', false), Query.limit(1),
         ]);
         return { id, count: res.total };
       }));
@@ -368,259 +306,200 @@ async function handleCoupons(action, payload, userId) {
       return map;
     }
 
-    case 'deleteCode': {
+    case 'deleteCode':
       await requireAdmin(userId);
-      const { codeId } = payload;
-      await db.deleteDocument(DB_ID, COLLECTIONS.COUPON_CODES, codeId);
+      await db().deleteDocument(DB_ID, COLS.COUPON_CODES, payload.codeId);
       return { success: true };
-    }
 
-    default:
-      throw new Error(`Unknown action: ${action}`);
+    default: throw new Error(`Unknown action: coupons.${action}`);
   }
 }
 
-// REDEMPTIONS
 async function handleRedemptions(action, payload, userId) {
-  const db = new Databases(getServerClient());
-
   switch (action) {
 
     case 'redeem': {
       const { rewardId, pointsCost } = payload;
-      const profile = await db.getDocument(DB_ID, COLLECTIONS.USERS, userId);
-      if (profile.points < pointsCost) {
-        throw new Error('Not enough eco-points to redeem this reward.');
-      }
-      const available = await db.listDocuments(DB_ID, COLLECTIONS.COUPON_CODES, [
-        Query.equal('rewardId', rewardId),
-        Query.equal('isUsed', false),
-        Query.limit(1),
-      ]);
-      if (available.documents.length === 0) {
-        throw new Error('No coupon codes left for this reward. Check back later!');
-      }
-      const codeDoc    = available.documents[0];
-      const couponCode = codeDoc.code;
-      const now        = new Date().toISOString();
+      const profile = await db().getDocument(DB_ID, COLS.USERS, userId);
+      if (profile.points < pointsCost) throw new Error('Not enough eco-points.');
 
-      await db.updateDocument(DB_ID, COLLECTIONS.COUPON_CODES, codeDoc.$id, {
+      const avail = await db().listDocuments(DB_ID, COLS.COUPON_CODES, [
+        Query.equal('rewardId', rewardId), Query.equal('isUsed', false), Query.limit(1),
+      ]);
+      if (avail.documents.length === 0) throw new Error('No coupon codes left for this reward.');
+
+      const codeDoc = avail.documents[0];
+      const now     = new Date().toISOString();
+
+      await db().updateDocument(DB_ID, COLS.COUPON_CODES, codeDoc.$id, {
         isUsed: true, usedBy: userId, usedAt: now,
       });
 
-      // Check remaining — auto-deactivate if empty
-      const remaining = await db.listDocuments(DB_ID, COLLECTIONS.COUPON_CODES, [
-        Query.equal('rewardId', rewardId),
-        Query.equal('isUsed', false),
-        Query.limit(1),
+      const remaining = await db().listDocuments(DB_ID, COLS.COUPON_CODES, [
+        Query.equal('rewardId', rewardId), Query.equal('isUsed', false), Query.limit(1),
       ]);
       if (remaining.total === 0) {
-        await db.updateDocument(DB_ID, COLLECTIONS.REWARDS, rewardId, { available: false });
+        await db().updateDocument(DB_ID, COLS.REWARDS, rewardId, { available: false });
       }
 
-      const redemption = await db.createDocument(DB_ID, COLLECTIONS.REDEMPTIONS, ID.unique(), {
-        userId, rewardId, pointsSpent: pointsCost, couponCode, redeemedAt: now,
+      const redemption = await db().createDocument(DB_ID, COLS.REDEMPTIONS, ID.unique(), {
+        userId, rewardId, pointsSpent: pointsCost,
+        couponCode: codeDoc.code, redeemedAt: now,
       });
 
-      await db.updateDocument(DB_ID, COLLECTIONS.USERS, userId, {
+      await db().updateDocument(DB_ID, COLS.USERS, userId, {
         points: profile.points - pointsCost,
       });
 
       return redemption;
     }
 
-    case 'getMyRedemptions': {
-      return db.listDocuments(DB_ID, COLLECTIONS.REDEMPTIONS, [
-        Query.equal('userId', userId),
-        Query.orderDesc('redeemedAt'),
+    case 'getMyRedemptions':
+      return db().listDocuments(DB_ID, COLS.REDEMPTIONS, [
+        Query.equal('userId', userId), Query.orderDesc('redeemedAt'),
       ]);
-    }
 
-    default:
-      throw new Error(`Unknown action: ${action}`);
+    default: throw new Error(`Unknown action: redemptions.${action}`);
   }
 }
 
-// GROUPS
 async function handleGroups(action, payload, userId) {
-  const db = new Databases(getServerClient());
-
   switch (action) {
 
     case 'create': {
-      const { name } = payload;
-      const group = await db.createDocument(DB_ID, COLLECTIONS.GROUPS, ID.unique(), {
-        name,
-        createdBy:   userId,
-        memberIds:   JSON.stringify([userId]),
-        totalPoints: 0,
-        createdAt:   new Date().toISOString(),
+      const group = await db().createDocument(DB_ID, COLS.GROUPS, ID.unique(), {
+        name: payload.name, createdBy: userId,
+        memberIds: JSON.stringify([userId]),
+        totalPoints: 0, createdAt: new Date().toISOString(),
       });
-      const profile = await db.getDocument(DB_ID, COLLECTIONS.USERS, userId);
-      const existing = profile.groupIds || [];
-      await db.updateDocument(DB_ID, COLLECTIONS.USERS, userId, {
-        groupIds: [...existing, group.$id],
+      const profile = await db().getDocument(DB_ID, COLS.USERS, userId);
+      await db().updateDocument(DB_ID, COLS.USERS, userId, {
+        groupIds: [...(profile.groupIds || []), group.$id],
       });
       return group;
     }
 
-    case 'get': {
-      const { groupId } = payload;
-      return db.getDocument(DB_ID, COLLECTIONS.GROUPS, groupId);
-    }
+    case 'get':
+      return db().getDocument(DB_ID, COLS.GROUPS, payload.groupId);
 
     case 'getMultiple': {
-      const { groupIds } = payload;
-      if (!groupIds || groupIds.length === 0) return [];
+      if (!payload.groupIds?.length) return [];
       const results = await Promise.all(
-        groupIds.map(id => db.getDocument(DB_ID, COLLECTIONS.GROUPS, id).catch(() => null))
+        payload.groupIds.map(id => db().getDocument(DB_ID, COLS.GROUPS, id).catch(() => null))
       );
       return results.filter(Boolean);
     }
 
-    case 'leaderboard': {
-      return db.listDocuments(DB_ID, COLLECTIONS.GROUPS, [
-        Query.orderDesc('totalPoints'),
-        Query.limit(100),
+    case 'leaderboard':
+      return db().listDocuments(DB_ID, COLS.GROUPS, [
+        Query.orderDesc('totalPoints'), Query.limit(100),
       ]);
-    }
 
     case 'leave': {
       const { groupId } = payload;
-      const group   = await db.getDocument(DB_ID, COLLECTIONS.GROUPS, groupId);
+      const group   = await db().getDocument(DB_ID, COLS.GROUPS, groupId);
       const members = JSON.parse(group.memberIds || '[]').filter(id => id !== userId);
-      await db.updateDocument(DB_ID, COLLECTIONS.GROUPS, groupId, {
-        memberIds: JSON.stringify(members),
+      await db().updateDocument(DB_ID, COLS.GROUPS, groupId, { memberIds: JSON.stringify(members) });
+      const profile  = await db().getDocument(DB_ID, COLS.USERS, userId);
+      await db().updateDocument(DB_ID, COLS.USERS, userId, {
+        groupIds: (profile.groupIds || []).filter(id => id !== groupId),
       });
-      const profile  = await db.getDocument(DB_ID, COLLECTIONS.USERS, userId);
-      const groupIds = (profile.groupIds || []).filter(id => id !== groupId);
-      await db.updateDocument(DB_ID, COLLECTIONS.USERS, userId, { groupIds });
       if (members.length === 0) {
-        const pending = await db.listDocuments(DB_ID, COLLECTIONS.INVITES, [
-          Query.equal('groupId', groupId),
-          Query.equal('status', 'pending'),
+        const pending = await db().listDocuments(DB_ID, COLS.INVITES, [
+          Query.equal('groupId', groupId), Query.equal('status', 'pending'),
         ]);
-        await Promise.all(pending.documents.map(inv =>
-          db.deleteDocument(DB_ID, COLLECTIONS.INVITES, inv.$id)
+        await Promise.all(pending.documents.map(i =>
+          db().deleteDocument(DB_ID, COLS.INVITES, i.$id)
         ));
-        await db.deleteDocument(DB_ID, COLLECTIONS.GROUPS, groupId);
+        await db().deleteDocument(DB_ID, COLS.GROUPS, groupId);
       }
       return { success: true };
     }
 
     case 'sendInvite': {
       const { groupId, email, inviterName, inviterEmail } = payload;
-      const existing = await db.listDocuments(DB_ID, COLLECTIONS.INVITES, [
-        Query.equal('email', email),
-        Query.equal('groupId', groupId),
-        Query.equal('status', 'pending'),
+      const existing = await db().listDocuments(DB_ID, COLS.INVITES, [
+        Query.equal('email', email), Query.equal('groupId', groupId), Query.equal('status', 'pending'),
       ]);
-      if (existing.documents.length > 0) {
-        throw new Error('An invite has already been sent to this email.');
-      }
-      const group = await db.getDocument(DB_ID, COLLECTIONS.GROUPS, groupId);
-      return db.createDocument(DB_ID, COLLECTIONS.INVITES, ID.unique(), {
-        groupId,
-        groupName:    group.name,
-        email,
-        invitedBy:    userId,
-        inviterName:  inviterName  || 'A member',
+      if (existing.documents.length > 0) throw new Error('Invite already sent to this email.');
+      const group = await db().getDocument(DB_ID, COLS.GROUPS, groupId);
+      return db().createDocument(DB_ID, COLS.INVITES, ID.unique(), {
+        groupId, groupName: group.name, email, invitedBy: userId,
+        inviterName: inviterName || 'A member',
         inviterEmail: inviterEmail || '',
-        status:       'pending',
-        createdAt:    new Date().toISOString(),
+        status: 'pending', createdAt: new Date().toISOString(),
       });
     }
 
-    case 'getPendingInvites': {
-      const { email } = payload;
-      return db.listDocuments(DB_ID, COLLECTIONS.INVITES, [
-        Query.equal('email', email),
-        Query.equal('status', 'pending'),
+    case 'getPendingInvites':
+      return db().listDocuments(DB_ID, COLS.INVITES, [
+        Query.equal('email', payload.email), Query.equal('status', 'pending'),
       ]);
-    }
 
     case 'acceptInvite': {
       const { inviteId, groupId } = payload;
-      const group   = await db.getDocument(DB_ID, COLLECTIONS.GROUPS, groupId);
+      const group   = await db().getDocument(DB_ID, COLS.GROUPS, groupId);
       const members = JSON.parse(group.memberIds || '[]');
       if (!members.includes(userId)) members.push(userId);
-      await db.updateDocument(DB_ID, COLLECTIONS.GROUPS, groupId, {
-        memberIds: JSON.stringify(members),
-      });
-      const profile  = await db.getDocument(DB_ID, COLLECTIONS.USERS, userId);
+      await db().updateDocument(DB_ID, COLS.GROUPS, groupId, { memberIds: JSON.stringify(members) });
+      const profile  = await db().getDocument(DB_ID, COLS.USERS, userId);
       const groupIds = profile.groupIds || [];
       if (!groupIds.includes(groupId)) {
-        await db.updateDocument(DB_ID, COLLECTIONS.USERS, userId, {
-          groupIds: [...groupIds, groupId],
-        });
+        await db().updateDocument(DB_ID, COLS.USERS, userId, { groupIds: [...groupIds, groupId] });
       }
-      await db.updateDocument(DB_ID, COLLECTIONS.INVITES, inviteId, { status: 'accepted' });
+      await db().updateDocument(DB_ID, COLS.INVITES, inviteId, { status: 'accepted' });
       return { success: true };
     }
 
-    case 'declineInvite': {
-      const { inviteId } = payload;
-      await db.updateDocument(DB_ID, COLLECTIONS.INVITES, inviteId, { status: 'declined' });
+    case 'declineInvite':
+      await db().updateDocument(DB_ID, COLS.INVITES, payload.inviteId, { status: 'declined' });
       return { success: true };
-    }
 
-    default:
-      throw new Error(`Unknown action: ${action}`);
+    default: throw new Error(`Unknown action: groups.${action}`);
   }
 }
 
-// Actions that don't require an authenticated session
-const GUEST_ACTIONS = new Set([
-  'users:getUserByEmail',
-]);
+// ── ACTIONS THAT DON'T NEED A SESSION ────────────────────
+const GUEST_ACTIONS = new Set(['users:getUserByEmail']);
 
-// ── MAIN ENTRY POINT ──────────────────────────────────────
+// ── ENTRY POINT ───────────────────────────────────────────
 export default async ({ req, res, log, error }) => {
   try {
-    // Appwrite passes body as string — parse safely
     let body;
     try {
       body = typeof req.body === 'string'
-        ? (req.body.trim() === '' ? {} : JSON.parse(req.body))
+        ? (req.body.trim() ? JSON.parse(req.body) : {})
         : (req.body ?? {});
-    } catch (parseErr) {
-      return res.json({ success: false, error: 'Invalid request body: ' + parseErr.message }, 400);
+    } catch (e) {
+      return res.json({ success: false, error: 'Invalid request body: ' + e.message }, 400);
     }
 
     const { domain, action, payload = {} } = body;
 
-    log(`[fn-echo] received domain=${domain} action=${action} bodyKeys=${Object.keys(body).join(',')}`);
-
     if (!domain || !action) {
-      return res.json({ success: false, error: `Missing domain or action. Got: ${JSON.stringify(body).slice(0, 200)}` }, 400);
+      return res.json({ success: false, error: 'Missing domain or action.' }, 400);
     }
 
-    const actionKey = `${domain}:${action}`;
-    const isGuest   = GUEST_ACTIONS.has(actionKey);
+    const key     = `${domain}:${action}`;
+    const isGuest = GUEST_ACTIONS.has(key);
 
-    // Resolve userId — skip for guest actions
+    log(`[fn-echo] ${key} guest=${isGuest}`);
+
+    // Resolve userId — required for all non-guest actions
     let userId = null;
-    const jwt = req.headers['x-appwrite-user-jwt'];
-
     if (!isGuest) {
-      if (!jwt || jwt.trim() === '') throw new Error('UNAUTHORIZED: Missing JWT.');
+      const jwt = req.headers['x-appwrite-user-jwt'];
+      if (!jwt || jwt.trim() === '') {
+        return res.json({ success: false, error: 'UNAUTHORIZED: No session.' }, 401);
+      }
       try {
-        const client  = getUserClient(jwt);
-        const { Account } = await import('node-appwrite');
-        const account = new Account(client);
-        const caller  = await account.get();
-        userId = caller.$id;
+        userId = await getUserId(jwt);
       } catch (e) {
-        throw new Error('UNAUTHORIZED: Invalid or expired session. Please log in again.');
+        return res.json({ success: false, error: 'UNAUTHORIZED: Invalid session.' }, 401);
       }
     }
 
-    // For guest actions, log what we received for debugging
-    if (isGuest) {
-      log(`[fn-echo] guest action: ${actionKey} jwt=${jwt ? 'present' : 'absent'}`);
-    }
-
-    log(`[fn-echo] domain=${domain} action=${action} userId=${userId ?? 'guest'}`);
+    log(`[fn-echo] userId=${userId ?? 'guest'}`);
 
     let result;
     switch (domain) {
@@ -630,17 +509,14 @@ export default async ({ req, res, log, error }) => {
       case 'coupons':     result = await handleCoupons(action, payload, userId);     break;
       case 'redemptions': result = await handleRedemptions(action, payload, userId); break;
       case 'groups':      result = await handleGroups(action, payload, userId);      break;
-      default:            throw new Error(`Unknown domain: ${domain}`);
+      default:            return res.json({ success: false, error: `Unknown domain: ${domain}` }, 400);
     }
 
     return res.json({ success: true, data: result });
 
   } catch (err) {
-    error(`[fn-echo] ${err.message}`);
-    const isUnauth = err.message?.startsWith('UNAUTHORIZED');
-    return res.json(
-      { success: false, error: err.message },
-      isUnauth ? 403 : 500,
-    );
+    error(`[fn-echo] ERROR: ${err.message}`);
+    const status = err.message?.startsWith('UNAUTHORIZED') ? 403 : 500;
+    return res.json({ success: false, error: err.message }, status);
   }
 };
