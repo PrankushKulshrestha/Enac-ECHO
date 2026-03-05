@@ -21,7 +21,11 @@ export default function AdminRoute({ children }) {
   }
 
   if (!user) return <Navigate to="/login" replace />;
-  if (!profile?.isAdmin) return <Navigate to="/dashboard" replace />;
+
+  const role = profile?.role;
+  if (role !== 'admin' && role !== 'superadmin') {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   return children;
 }

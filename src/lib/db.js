@@ -16,41 +16,27 @@ export const ITEM_POINTS = {
 };
 
 // ── CORE CALLER ───────────────────────────────────────────
-// Single _execute function — Appwrite SDK v16 handles auth automatically
-// via the active session (cookie/JWT managed by SDK internally).
-// No need to manually attach JWTs — the SDK does it.
 async function _execute(domain, action, payload = {}) {
   const body = JSON.stringify({ domain, action, payload });
-
   let execution;
   try {
-    // Appwrite SDK v16: createExecution(functionId, body, async, path, method, headers)
     execution = await functions.createExecution(
-      FN_ID,   // functionId
-      body,    // body
-      false,   // async — wait for result
-      '/',     // path
-      'POST',  // method
-      {},      // headers
+      FN_ID, body, false, '/', 'POST', {},
     );
   } catch (e) {
     throw new Error('Could not reach server function: ' + e.message);
   }
-
   const raw = execution.responseBody ?? '';
   if (!raw) throw new Error('Empty response from server function.');
-
   let result;
   try {
     result = JSON.parse(raw);
   } catch {
     throw new Error('Server returned invalid response: ' + raw.slice(0, 150));
   }
-
   if (!result.success) {
     throw new Error(result.error || 'Server error.');
   }
-
   return result.data;
 }
 
@@ -71,11 +57,24 @@ export async function getAllUsers() {
   return _execute('users', 'getAllUsers');
 }
 export async function getUserByEmail(email) {
-  // Query directly — no session needed, collection has Any read permission
   return databases.listDocuments(DB_ID, COLLECTIONS.USERS, [
     Query.equal('email', email),
     Query.limit(1),
   ]);
+}
+
+// ── ROLE MANAGEMENT (superadmin only) ─────────────────────
+export async function promoteToAdmin(targetUserId) {
+  return _execute('users', 'promoteToAdmin', { targetUserId });
+}
+export async function promoteToSuperAdmin(targetUserId) {
+  return _execute('users', 'promoteToSuperAdmin', { targetUserId });
+}
+export async function demoteToUser(targetUserId) {
+  return _execute('users', 'demoteToUser', { targetUserId });
+}
+export async function deleteUser(targetUserId) {
+  return _execute('users', 'deleteUser', { targetUserId });
 }
 
 // ── SUBMISSIONS ───────────────────────────────────────────
@@ -97,7 +96,6 @@ export async function deleteSubmission(submissionId) {
 
 // ── REWARDS ───────────────────────────────────────────────
 export async function getAvailableRewards() {
-  // Query directly — rewards are public read
   return databases.listDocuments(DB_ID, COLLECTIONS.REWARDS, [
     Query.equal('available', true),
   ]);
