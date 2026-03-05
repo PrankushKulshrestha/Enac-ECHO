@@ -1,4 +1,4 @@
-import { Client, Account, Databases, Storage, ID, Query } from 'appwrite';
+import { Client, Account, Databases, Storage, ID, Query, Permission, Role } from 'appwrite';
 
 const client = new Client();
 
@@ -9,15 +9,17 @@ client
 export const account   = new Account(client);
 export const databases = new Databases(client);
 export const storage   = new Storage(client);
-export { ID, Query };
+
+export { ID, Query, Permission, Role };
 
 export const DB_ID = import.meta.env.VITE_APPWRITE_DB_ID;
 
 export const COLLECTIONS = {
-  USERS:       'users',
-  SUBMISSIONS: 'submissions',
-  REWARDS:     'rewards',
-  REDEMPTIONS: 'redemptions',
-  GROUPS:      'groups',
-  INVITES:     'invites',
+  COUPON_CODES: 'coupon_codes',
+  USERS:        'users',
+  SUBMISSIONS:  'submissions',
+  REWARDS:      'rewards',
+  REDEMPTIONS:  'redemptions',
+  GROUPS:       'groups',
+  INVITES:      'invites',
 };

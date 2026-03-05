@@ -1,4 +1,6 @@
-import { databases, DB_ID, COLLECTIONS, ID, Query } from './appwrite';
+import { account } from './appwrite';
+
+const FN_ENDPOINT = `https://fra.cloud.appwrite.io/v1/functions/69a9b6a5003ae8c2400e/executions`;
 
 export const ITEM_POINTS = {
   'Mobile Phone':     50,
@@ -13,322 +15,170 @@ export const ITEM_POINTS = {
   'Other':            10,
 };
 
-// ── BAG CODE ──────────────────────────────────────────────
-// Generates a unique 16-character alphanumeric code: ECHO-XXXXXXXXXXXXXXXX
-// The random part is seeded from submission attributes for traceability.
-export function generateBagCode(userId, itemCount, totalPoints) {
-  const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I to avoid confusion
-  const seed  = `${userId}-${itemCount}-${totalPoints}-${Date.now()}`;
-  // Hash seed into a deterministic-ish stream, then map to chars
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    hash = (Math.imul(31, hash) + seed.charCodeAt(i)) | 0;
-  }
-  let code = '';
-  let entropy = Math.abs(hash);
-  for (let i = 0; i < 16; i++) {
-    // Mix in crypto randomness at each step so no two codes are alike
-    entropy = (entropy * 1664525 + 1013904223) | 0;
-    const idx = (Math.abs(entropy) + Math.floor(Math.random() * CHARS.length)) % CHARS.length;
-    code += CHARS[idx];
-    if (i === 3 || i === 7 || i === 11) code += '-'; // XXXX-XXXX-XXXX-XXXX
-  }
-  return `ECHO-${code}`; // final: ECHO-XXXX-XXXX-XXXX-XXXX (24 chars total, easy to read)
-}
+// ── CORE CALLER ───────────────────────────────────────────
+// Gets the current user's JWT and calls fn-echo with domain + action + payload.
+async function call(domain, action, payload = {}) {
+  // Get a short-lived JWT for this request
+  const jwt = await account.createJWT();
 
-// ── USER ─────────────────────────────────────────────────
-export async function getUserProfile(userId) {
-  return databases.getDocument(DB_ID, COLLECTIONS.USERS, userId);
-}
-
-export async function updateUserPoints(userId, pointsToAdd) {
-  const profile = await getUserProfile(userId);
-  return databases.updateDocument(DB_ID, COLLECTIONS.USERS, userId, {
-    points:        profile.points + pointsToAdd,
-    totalDeposits: profile.totalDeposits + 1,
+  const response = await fetch(FN_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type':          'application/json',
+      'x-appwrite-project':    import.meta.env.VITE_APPWRITE_PROJECT_ID,
+      'x-appwrite-user-jwt':   jwt.jwt,
+    },
+    body: JSON.stringify({ domain, action, payload }),
   });
+
+  const execution = await response.json();
+
+  // Appwrite wraps function output in responseBody
+  let result;
+  try {
+    result = JSON.parse(execution.responseBody ?? execution.response ?? '{}');
+  } catch {
+    throw new Error('Invalid response from server function.');
+  }
+
+  if (!result.success) {
+    throw new Error(result.error || 'Server error.');
+  }
+
+  return result.data;
+}
+
+// ── USERS ─────────────────────────────────────────────────
+export async function createUserProfile(userId, name, email) {
+  return call('users', 'createProfile', { name, email });
+}
+
+export async function getUserProfile() {
+  return call('users', 'getProfile');
+}
+
+export async function updateUserProfile(name) {
+  return call('users', 'updateProfile', { name });
+}
+
+export async function setVerified() {
+  return call('users', 'setVerified');
+}
+
+export async function getAllUsers() {
+  return call('users', 'getAllUsers');
+}
+
+export async function getUserByEmail(email) {
+  return call('users', 'getUserByEmail', { email });
 }
 
 // ── SUBMISSIONS ───────────────────────────────────────────
 export async function createSubmission(userId, { items, binId, groupId }) {
-  const totalPoints = items.reduce((sum, item) => {
-    return sum + (ITEM_POINTS[item.itemType] || 10) * item.quantity;
-  }, 0);
-
-  // Generate unique bag code based on submission attributes
-  const bagCode = generateBagCode(userId, items.length, totalPoints);
-
-  return databases.createDocument(
-    DB_ID, COLLECTIONS.SUBMISSIONS, ID.unique(), {
-      userId,
-      items:       JSON.stringify(items),
-      totalPoints,
-      binId,
-      groupId:     groupId || null,
-      status:      'pending',
-      bagCode,                          // ✅ stored for admin verification
-      submittedAt: new Date().toISOString(),
-    }
-  );
+  return call('submissions', 'create', { items, binId, groupId });
 }
 
-export async function getUserSubmissions(userId) {
-  return databases.listDocuments(DB_ID, COLLECTIONS.SUBMISSIONS, [
-    Query.equal('userId', userId),
-    Query.orderDesc('submittedAt'),
-    Query.limit(100),
-  ]);
+export async function getUserSubmissions() {
+  return call('submissions', 'getMySubmissions');
+}
+
+export async function getAllSubmissions() {
+  return call('submissions', 'getAll');
 }
 
 export async function updateSubmissionStatus(submissionId, newStatus) {
-  const submission = await databases.getDocument(DB_ID, COLLECTIONS.SUBMISSIONS, submissionId);
-  const oldStatus  = submission.status;
+  return call('submissions', 'updateStatus', { submissionId, newStatus });
+}
 
-  if (oldStatus === newStatus) return;
-
-  await databases.updateDocument(DB_ID, COLLECTIONS.SUBMISSIONS, submissionId, {
-    status: newStatus,
-  });
-
-  const { userId, totalPoints, groupId } = submission;
-
-  if (newStatus === 'verified') {
-    const profile = await getUserProfile(userId);
-    await databases.updateDocument(DB_ID, COLLECTIONS.USERS, userId, {
-      points:        profile.points + totalPoints,
-      totalDeposits: profile.totalDeposits + 1,
-    });
-    if (groupId) {
-      const group = await databases.getDocument(DB_ID, COLLECTIONS.GROUPS, groupId);
-      await databases.updateDocument(DB_ID, COLLECTIONS.GROUPS, groupId, {
-        totalPoints: group.totalPoints + totalPoints,
-      });
-    }
-  }
-
-  if (oldStatus === 'verified' && newStatus !== 'verified') {
-    const profile = await getUserProfile(userId);
-    await databases.updateDocument(DB_ID, COLLECTIONS.USERS, userId, {
-      points:        Math.max(0, profile.points - totalPoints),
-      totalDeposits: Math.max(0, profile.totalDeposits - 1),
-    });
-    if (groupId) {
-      const group = await databases.getDocument(DB_ID, COLLECTIONS.GROUPS, groupId);
-      await databases.updateDocument(DB_ID, COLLECTIONS.GROUPS, groupId, {
-        totalPoints: Math.max(0, group.totalPoints - totalPoints),
-      });
-    }
-  }
+export async function deleteSubmission(submissionId) {
+  return call('submissions', 'delete', { submissionId });
 }
 
 // ── REWARDS ───────────────────────────────────────────────
 export async function getAvailableRewards() {
-  return databases.listDocuments(DB_ID, COLLECTIONS.REWARDS, [
-    Query.equal('available', true),
-  ]);
-}
-
-export async function createReward(data) {
-  return databases.createDocument(DB_ID, COLLECTIONS.REWARDS, ID.unique(), {
-    title:       data.title,
-    description: data.description,
-    pointsCost:  data.pointsCost,
-    partner:     data.partner,
-    brandName:   data.brandName,
-    logoUrl:     data.logoUrl || null,
-    available:   true,
-  });
+  return call('rewards', 'getAvailable');
 }
 
 export async function getAllRewards() {
-  return databases.listDocuments(DB_ID, COLLECTIONS.REWARDS);
+  return call('rewards', 'getAll');
+}
+
+export async function createReward(data) {
+  return call('rewards', 'create', data);
 }
 
 export async function updateReward(rewardId, data) {
-  return databases.updateDocument(DB_ID, COLLECTIONS.REWARDS, rewardId, data);
+  return call('rewards', 'update', { rewardId, data });
+}
+
+export async function deleteReward(rewardId) {
+  return call('rewards', 'delete', { rewardId });
+}
+
+// ── COUPON CODES ──────────────────────────────────────────
+export async function addCouponCodesToReward(rewardId, codes) {
+  return call('coupons', 'addCodes', { rewardId, codes });
+}
+
+export async function getCouponCodesForReward(rewardId) {
+  return call('coupons', 'getCodes', { rewardId });
+}
+
+export async function getAvailableCodeCount(rewardId) {
+  const res = await call('coupons', 'getCount', { rewardId });
+  return res.count;
+}
+
+export async function getAvailableCodeCounts(rewardIds) {
+  return call('coupons', 'getCounts', { rewardIds });
+}
+
+export async function deleteCouponCode(codeId) {
+  return call('coupons', 'deleteCode', { codeId });
 }
 
 // ── REDEMPTIONS ───────────────────────────────────────────
 export async function redeemReward(userId, rewardId, pointsCost) {
-  const profile = await getUserProfile(userId);
-  if (profile.points < pointsCost) {
-    throw new Error('Not enough eco-points to redeem this reward.');
-  }
-  const couponCode = `ECHO-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-  const redemption = await databases.createDocument(
-    DB_ID, COLLECTIONS.REDEMPTIONS, ID.unique(), {
-      userId,
-      rewardId,
-      pointsSpent: pointsCost,
-      couponCode,
-      redeemedAt:  new Date().toISOString(),
-    }
-  );
-  await databases.updateDocument(DB_ID, COLLECTIONS.USERS, userId, {
-    points: profile.points - pointsCost,
-  });
-  return redemption;
+  return call('redemptions', 'redeem', { rewardId, pointsCost });
 }
 
-export async function getUserRedemptions(userId) {
-  return databases.listDocuments(DB_ID, COLLECTIONS.REDEMPTIONS, [
-    Query.equal('userId', userId),
-    Query.orderDesc('redeemedAt'),
-  ]);
+export async function getUserRedemptions() {
+  return call('redemptions', 'getMyRedemptions');
 }
 
 // ── GROUPS ────────────────────────────────────────────────
-export async function createGroup(name, createdBy) {
-  const group = await databases.createDocument(
-    DB_ID, COLLECTIONS.GROUPS, ID.unique(), {
-      name,
-      createdBy,
-      memberIds:   JSON.stringify([createdBy]),
-      totalPoints: 0,
-      createdAt:   new Date().toISOString(),
-    }
-  );
-  const profile = await getUserProfile(createdBy);
-  const existing = profile.groupIds || [];
-  await databases.updateDocument(DB_ID, COLLECTIONS.USERS, createdBy, {
-    groupIds: [...existing, group.$id],
-  });
-  return group;
+export async function createGroup(name) {
+  return call('groups', 'create', { name });
 }
 
 export async function getGroup(groupId) {
-  return databases.getDocument(DB_ID, COLLECTIONS.GROUPS, groupId);
+  return call('groups', 'get', { groupId });
 }
 
 export async function getGroups(groupIds) {
-  if (!groupIds || groupIds.length === 0) return [];
-  const results = await Promise.all(groupIds.map(id => getGroup(id).catch(() => null)));
-  return results.filter(Boolean);
-}
-
-export async function addPointsToGroup(groupId, points) {
-  const group = await getGroup(groupId);
-  return databases.updateDocument(DB_ID, COLLECTIONS.GROUPS, groupId, {
-    totalPoints: group.totalPoints + points,
-  });
+  return call('groups', 'getMultiple', { groupIds });
 }
 
 export async function getGroupLeaderboard() {
-  return databases.listDocuments(DB_ID, COLLECTIONS.GROUPS, [
-    Query.orderDesc('totalPoints'),
-    Query.limit(100),
-  ]);
+  return call('groups', 'leaderboard');
 }
 
 export async function leaveGroup(userId, groupId) {
-  const group = await getGroup(groupId);
-  const members = JSON.parse(group.memberIds || '[]').filter(id => id !== userId);
-  await databases.updateDocument(DB_ID, COLLECTIONS.GROUPS, groupId, {
-    memberIds: JSON.stringify(members),
-  });
-  const profile = await getUserProfile(userId);
-  const groupIds = (profile.groupIds || []).filter(id => id !== groupId);
-  await databases.updateDocument(DB_ID, COLLECTIONS.USERS, userId, {
-    groupIds,
-  });
-  if (members.length === 0) {
-    const pendingInvites = await databases.listDocuments(DB_ID, COLLECTIONS.INVITES, [
-      Query.equal('groupId', groupId),
-      Query.equal('status', 'pending'),
-    ]);
-    await Promise.all(
-      pendingInvites.documents.map(inv =>
-        databases.deleteDocument(DB_ID, COLLECTIONS.INVITES, inv.$id)
-      )
-    );
-    await databases.deleteDocument(DB_ID, COLLECTIONS.GROUPS, groupId);
-  }
+  return call('groups', 'leave', { groupId });
 }
 
-// ── INVITES ───────────────────────────────────────────────
 export async function sendInvite(groupId, email, invitedBy, inviterName, inviterEmail) {
-  const existing = await databases.listDocuments(DB_ID, COLLECTIONS.INVITES, [
-    Query.equal('email', email),
-    Query.equal('groupId', groupId),
-    Query.equal('status', 'pending'),
-  ]);
-  if (existing.documents.length > 0) {
-    throw new Error('An invite has already been sent to this email.');
-  }
-  const group = await getGroup(groupId);
-  return databases.createDocument(DB_ID, COLLECTIONS.INVITES, ID.unique(), {
-    groupId,
-    groupName:    group.name,
-    email,
-    invitedBy,
-    inviterName:  inviterName  || 'A member',
-    inviterEmail: inviterEmail || '',
-    status:       'pending',
-    createdAt:    new Date().toISOString(),
-  });
+  return call('groups', 'sendInvite', { groupId, email, inviterName, inviterEmail });
 }
 
 export async function getPendingInvites(email) {
-  return databases.listDocuments(DB_ID, COLLECTIONS.INVITES, [
-    Query.equal('email', email),
-    Query.equal('status', 'pending'),
-  ]);
+  return call('groups', 'getPendingInvites', { email });
 }
 
 export async function acceptInvite(inviteId, userId, groupId) {
-  const group = await getGroup(groupId);
-  const members = JSON.parse(group.memberIds || '[]');
-  if (!members.includes(userId)) members.push(userId);
-  await databases.updateDocument(DB_ID, COLLECTIONS.GROUPS, groupId, {
-    memberIds: JSON.stringify(members),
-  });
-  const profile = await getUserProfile(userId);
-  const groupIds = profile.groupIds || [];
-  if (!groupIds.includes(groupId)) {
-    await databases.updateDocument(DB_ID, COLLECTIONS.USERS, userId, {
-      groupIds: [...groupIds, groupId],
-    });
-  }
-  await databases.updateDocument(DB_ID, COLLECTIONS.INVITES, inviteId, {
-    status: 'accepted',
-  });
+  return call('groups', 'acceptInvite', { inviteId, groupId });
 }
 
 export async function declineInvite(inviteId) {
-  return databases.updateDocument(DB_ID, COLLECTIONS.INVITES, inviteId, {
-    status: 'declined',
-  });
-}
-
-// ── ADMIN ─────────────────────────────────────────────────
-export async function getAllUsers() {
-  return databases.listDocuments(DB_ID, COLLECTIONS.USERS, [
-    Query.orderDesc('$createdAt'),
-    Query.limit(100),
-  ]);
-}
-
-export async function getAllSubmissions() {
-  return databases.listDocuments(DB_ID, COLLECTIONS.SUBMISSIONS, [
-    Query.orderDesc('submittedAt'),
-    Query.limit(100),
-  ]);
-}
-
-export async function deleteSubmission(submissionId) {
-  const submission = await databases.getDocument(DB_ID, COLLECTIONS.SUBMISSIONS, submissionId);
-  if (submission.status === 'verified') {
-    const profile = await getUserProfile(submission.userId);
-    await databases.updateDocument(DB_ID, COLLECTIONS.USERS, submission.userId, {
-      points:        Math.max(0, profile.points - submission.totalPoints),
-      totalDeposits: Math.max(0, profile.totalDeposits - 1),
-    });
-    if (submission.groupId) {
-      const group = await getGroup(submission.groupId);
-      await databases.updateDocument(DB_ID, COLLECTIONS.GROUPS, submission.groupId, {
-        totalPoints: Math.max(0, group.totalPoints - submission.totalPoints),
-      });
-    }
-  }
-  await databases.deleteDocument(DB_ID, COLLECTIONS.SUBMISSIONS, submissionId);
+  return call('groups', 'declineInvite', { inviteId });
 }
