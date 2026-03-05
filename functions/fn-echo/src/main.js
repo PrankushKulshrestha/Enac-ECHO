@@ -569,25 +569,58 @@ async function handleGroups(action, payload, userId) {
   }
 }
 
+// Actions that don't require an authenticated session
+const GUEST_ACTIONS = new Set([
+  'users:getUserByEmail',
+]);
+
 // ── MAIN ENTRY POINT ──────────────────────────────────────
 export default async ({ req, res, log, error }) => {
   try {
-    // Parse body
-    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    // Appwrite passes body as string — parse safely
+    let body;
+    try {
+      body = typeof req.body === 'string'
+        ? (req.body.trim() === '' ? {} : JSON.parse(req.body))
+        : (req.body ?? {});
+    } catch (parseErr) {
+      return res.json({ success: false, error: 'Invalid request body: ' + parseErr.message }, 400);
+    }
+
     const { domain, action, payload = {} } = body;
 
-    // Get caller identity from JWT
+    log(`[fn-echo] received domain=${domain} action=${action} bodyKeys=${Object.keys(body).join(',')}`);
+
+    if (!domain || !action) {
+      return res.json({ success: false, error: `Missing domain or action. Got: ${JSON.stringify(body).slice(0, 200)}` }, 400);
+    }
+
+    const actionKey = `${domain}:${action}`;
+    const isGuest   = GUEST_ACTIONS.has(actionKey);
+
+    // Resolve userId — skip for guest actions
+    let userId = null;
     const jwt = req.headers['x-appwrite-user-jwt'];
-    if (!jwt) throw new Error('UNAUTHORIZED: Missing JWT.');
 
-    // Resolve userId from JWT using server client
-    const client  = getUserClient(jwt);
-    const { Account } = await import('node-appwrite');
-    const account = new Account(client);
-    const caller  = await account.get();
-    const userId  = caller.$id;
+    if (!isGuest) {
+      if (!jwt || jwt.trim() === '') throw new Error('UNAUTHORIZED: Missing JWT.');
+      try {
+        const client  = getUserClient(jwt);
+        const { Account } = await import('node-appwrite');
+        const account = new Account(client);
+        const caller  = await account.get();
+        userId = caller.$id;
+      } catch (e) {
+        throw new Error('UNAUTHORIZED: Invalid or expired session. Please log in again.');
+      }
+    }
 
-    log(`[fn-echo] domain=${domain} action=${action} userId=${userId}`);
+    // For guest actions, log what we received for debugging
+    if (isGuest) {
+      log(`[fn-echo] guest action: ${actionKey} jwt=${jwt ? 'present' : 'absent'}`);
+    }
+
+    log(`[fn-echo] domain=${domain} action=${action} userId=${userId ?? 'guest'}`);
 
     let result;
     switch (domain) {

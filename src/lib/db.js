@@ -1,6 +1,7 @@
 import { account } from './appwrite';
 
-const FN_ENDPOINT = `https://fra.cloud.appwrite.io/v1/functions/69a9b6a5003ae8c2400e/executions`;
+const FN_ID       = '69a9b6a5003ae8c2400e';
+const FN_ENDPOINT = `https://fra.cloud.appwrite.io/v1/functions/${FN_ID}/executions`;
 
 export const ITEM_POINTS = {
   'Mobile Phone':     50,
@@ -15,30 +16,72 @@ export const ITEM_POINTS = {
   'Other':            10,
 };
 
-// ── CORE CALLER ───────────────────────────────────────────
-// Gets the current user's JWT and calls fn-echo with domain + action + payload.
+// ── CORE CALLERS ─────────────────────────────────────────
+
+// Authenticated call — requires active session (JWT)
 async function call(domain, action, payload = {}) {
-  // Get a short-lived JWT for this request
-  const jwt = await account.createJWT();
+  let jwt;
+  try {
+    const token = await account.createJWT();
+    jwt = token.jwt;
+  } catch {
+    throw new Error('No active session. Please log in.');
+  }
+  return _execute(domain, action, payload, jwt);
+}
 
-  const response = await fetch(FN_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'Content-Type':          'application/json',
-      'x-appwrite-project':    import.meta.env.VITE_APPWRITE_PROJECT_ID,
-      'x-appwrite-user-jwt':   jwt.jwt,
-    },
-    body: JSON.stringify({ domain, action, payload }),
-  });
+// Unauthenticated call — for login/register flows before session exists
+// Uses Appwrite's guest execution (no JWT), fn-echo handles these without auth check
+async function callGuest(domain, action, payload = {}) {
+  console.log('[callGuest] calling', domain, action, payload);
+  return _execute(domain, action, payload, null);
+}
 
-  const execution = await response.json();
+async function _execute(domain, action, payload, jwt) {
+  const headers = {
+    'Content-Type':       'application/json',
+    'x-appwrite-project': import.meta.env.VITE_APPWRITE_PROJECT_ID,
+  };
+  if (jwt) headers['x-appwrite-user-jwt'] = jwt;
 
-  // Appwrite wraps function output in responseBody
+  let response;
+  try {
+    // Appwrite function execution API expects { body, async, path, method, headers }
+    response = await fetch(FN_ENDPOINT, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        body:   JSON.stringify({ domain, action, payload }),
+        async:  false,
+        path:   '/',
+        method: 'POST',
+      }),
+    });
+  } catch (e) {
+    throw new Error('Could not reach server function. Check your connection.');
+  }
+
+  if (response.status === 401) {
+    throw new Error('UNAUTHORIZED: Function execution not permitted.');
+  }
+
+  // Appwrite returns execution object — responseBody contains our JSON
+  let execution;
+  try {
+    execution = await response.json();
+  } catch {
+    throw new Error('Empty response from server function.');
+  }
+
+  // responseBody is a string we need to parse
+  const raw = execution.responseBody ?? execution.response ?? '';
+  if (!raw) throw new Error('Empty response body from server function.');
+
   let result;
   try {
-    result = JSON.parse(execution.responseBody ?? execution.response ?? '{}');
+    result = JSON.parse(raw);
   } catch {
-    throw new Error('Invalid response from server function.');
+    throw new Error('Invalid JSON from server function: ' + raw.slice(0, 100));
   }
 
   if (!result.success) {
@@ -70,7 +113,7 @@ export async function getAllUsers() {
 }
 
 export async function getUserByEmail(email) {
-  return call('users', 'getUserByEmail', { email });
+  return callGuest('users', 'getUserByEmail', { email });
 }
 
 // ── SUBMISSIONS ───────────────────────────────────────────

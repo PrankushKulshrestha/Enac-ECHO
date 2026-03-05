@@ -15,8 +15,10 @@ export function AuthProvider({ children }) {
     try {
       const currentUser = await account.get();
       setUser(currentUser);
-      await fetchProfile();
+      // Only fetch profile if we have a valid session
+      try { await fetchProfile(); } catch { setProfile(null); }
     } catch {
+      // No session — totally normal on page load
       setUser(null);
       setProfile(null);
     } finally {
@@ -28,7 +30,8 @@ export function AuthProvider({ children }) {
     try {
       const doc = await getUserProfile();
       setProfile(doc);
-    } catch {
+    } catch (e) {
+      // Silently fail — no session or profile not found yet
       setProfile(null);
     }
   }
@@ -63,6 +66,7 @@ export function AuthProvider({ children }) {
   async function login(email) {
     // Check account exists via server function
     const result = await getUserByEmail(email);
+    console.log('[login] getUserByEmail result:', result);
     const docs   = result?.documents ?? result;
     if (!docs || docs.length === 0) {
       throw new Error('No account found with this email. Please register first.');
@@ -82,13 +86,12 @@ export function AuthProvider({ children }) {
     const sessionUserId = session.userId;
     const sessionEmail  = localStorage.getItem('echo_pending_email') || '';
 
-    // Mark verified via server function
-    try { await setVerified(); } catch (e) { console.error('setVerified:', e.message); }
-
     localStorage.removeItem('echo_pending_email');
 
+    // Confirm session is active before making any authenticated calls
+    let currentUser = null;
     try {
-      const currentUser = await account.get();
+      currentUser = await account.get();
       setUser(currentUser);
     } catch {
       setUser({
@@ -98,6 +101,9 @@ export function AuthProvider({ children }) {
         emailVerification: true,
       });
     }
+
+    // Now session is confirmed — safe to call function with JWT
+    try { await setVerified(); } catch (e) { console.error('setVerified:', e.message); }
 
     await fetchProfile();
     setLoading(false);
