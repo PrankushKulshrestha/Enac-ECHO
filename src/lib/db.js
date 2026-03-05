@@ -1,7 +1,7 @@
-import { account } from './appwrite';
+import { account, functions } from './appwrite';
+import { ExecutionMethod } from 'appwrite';
 
-const FN_ID       = '69a9b6a5003ae8c2400e';
-const FN_ENDPOINT = `https://fra.cloud.appwrite.io/v1/functions/${FN_ID}/executions`;
+const FN_ID = '69a9b6a5003ae8c2400e';
 
 export const ITEM_POINTS = {
   'Mobile Phone':     50,
@@ -18,64 +18,33 @@ export const ITEM_POINTS = {
 
 // ── CORE CALLERS ─────────────────────────────────────────
 
-// Authenticated call — requires active session (JWT)
+// Authenticated call — requires active session
 async function call(domain, action, payload = {}) {
-  let jwt;
-  try {
-    const token = await account.createJWT();
-    jwt = token.jwt;
-  } catch {
-    throw new Error('No active session. Please log in.');
-  }
-  return _execute(domain, action, payload, jwt);
+  return _execute(domain, action, payload, false);
 }
 
-// Unauthenticated call — for login/register flows before session exists
-// Uses Appwrite's guest execution (no JWT), fn-echo handles these without auth check
+// Guest call — no session required
 async function callGuest(domain, action, payload = {}) {
-  console.log('[callGuest] calling', domain, action, payload);
-  return _execute(domain, action, payload, null);
+  return _execute(domain, action, payload, true);
 }
 
-async function _execute(domain, action, payload, jwt) {
-  const headers = {
-    'Content-Type':       'application/json',
-    'x-appwrite-project': import.meta.env.VITE_APPWRITE_PROJECT_ID,
-  };
-  if (jwt) headers['x-appwrite-user-jwt'] = jwt;
-
-  let response;
-  try {
-    // Appwrite function execution API expects { body, async, path, method, headers }
-    response = await fetch(FN_ENDPOINT, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        body:   JSON.stringify({ domain, action, payload }),
-        async:  false,
-        path:   '/',
-        method: 'POST',
-      }),
-    });
-  } catch (e) {
-    throw new Error('Could not reach server function. Check your connection.');
-  }
-
-  if (response.status === 401) {
-    throw new Error('UNAUTHORIZED: Function execution not permitted.');
-  }
-
-  // Appwrite returns execution object — responseBody contains our JSON
+async function _execute(domain, action, payload, isGuest) {
+  const body = JSON.stringify({ domain, action, payload });
   let execution;
   try {
-    execution = await response.json();
-  } catch {
-    throw new Error('Empty response from server function.');
+    execution = await functions.createExecution(
+      FN_ID,
+      body,
+      false,            // async = false (wait for result)
+      '/',              // path
+      ExecutionMethod.POST,
+    );
+  } catch (e) {
+    throw new Error('Could not reach server function: ' + e.message);
   }
 
-  // responseBody is a string we need to parse
-  const raw = execution.responseBody ?? execution.response ?? '';
-  if (!raw) throw new Error('Empty response body from server function.');
+  const raw = execution.responseBody ?? '';
+  if (!raw) throw new Error('Empty response from server function.');
 
   let result;
   try {
