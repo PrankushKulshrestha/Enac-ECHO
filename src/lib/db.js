@@ -1,4 +1,4 @@
-import { functions } from './appwrite';
+import { functions, databases, DB_ID, COLLECTIONS, Query } from './appwrite';
 
 const FN_ID = '69a9b6a5003ae8c2400e';
 
@@ -71,7 +71,11 @@ export async function getAllUsers() {
   return _execute('users', 'getAllUsers');
 }
 export async function getUserByEmail(email) {
-  return _execute('users', 'getUserByEmail', { email });
+  // Query directly — no session needed, collection has Any read permission
+  return databases.listDocuments(DB_ID, COLLECTIONS.USERS, [
+    Query.equal('email', email),
+    Query.limit(1),
+  ]);
 }
 
 // ── SUBMISSIONS ───────────────────────────────────────────
@@ -93,7 +97,10 @@ export async function deleteSubmission(submissionId) {
 
 // ── REWARDS ───────────────────────────────────────────────
 export async function getAvailableRewards() {
-  return _execute('rewards', 'getAvailable');
+  // Query directly — rewards are public read
+  return databases.listDocuments(DB_ID, COLLECTIONS.REWARDS, [
+    Query.equal('available', true),
+  ]);
 }
 export async function getAllRewards() {
   return _execute('rewards', 'getAll');
