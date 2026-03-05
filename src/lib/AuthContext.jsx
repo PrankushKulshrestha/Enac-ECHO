@@ -33,67 +33,89 @@ export function AuthProvider({ children }) {
     }
   }
 
-  // ── REGISTER ──────────────────────────────────────────
+  // ── REGISTER ────────────────────────────────────────
   async function register(email, name) {
     const dummyPassword = ID.unique() + ID.unique();
 
     // 1. Create Appwrite auth account
     const newUser = await account.create(ID.unique(), email, dummyPassword, name);
 
-    // 2. Create a temp session so the SDK can attach credentials to the function call
+    // 2. Temp session so SDK can attach credentials to the function call
     await account.createEmailPasswordSession(email, dummyPassword);
 
-    // 3. Create DB profile via server function — runs with API key, no permission issues
+    // 3. Create DB profile via server function
     await createUserProfile(name, email);
 
-    // 4. Send magic link — this is the real login method going forward
-    await account.createMagicURLToken(
-      newUser.$id,
-      email,
-      `${window.location.origin}/verify`,
-    );
+    // 4. Send magic link — real login method going forward
+    try {
+      await account.createMagicURLToken(
+        newUser.$id,
+        email,
+        `${window.location.origin}/verify`,
+      );
+    } catch (e) {
+      throw new Error('Account created but failed to send verification email: ' + e.message);
+    }
 
-    // 5. Destroy temp session — user logs in via magic link only
+    // 5. Destroy temp session
     try { await account.deleteSession('current'); } catch {}
-
     localStorage.setItem('echo_pending_email', email);
   }
 
   // ── LOGIN ────────────────────────────────────────────
   async function login(email) {
     // Look up user profile to get their Appwrite userId
-    const result = await getUserByEmail(email);
-    const docs   = result?.documents ?? (Array.isArray(result) ? result : []);
-    if (!docs || docs.length === 0) {
+    let docs = [];
+    try {
+      const result = await getUserByEmail(email);
+      docs = result?.documents ?? (Array.isArray(result) ? result : []);
+    } catch (e) {
+      throw new Error('Could not look up account. Please try again. (' + e.message + ')');
+    }
+
+    if (docs.length === 0) {
       throw new Error('No account found with this email. Please register first.');
     }
+
     const userId = docs[0].userId ?? docs[0].$id;
-    await account.createMagicURLToken(
-      userId,
-      email,
-      `${window.location.origin}/verify`,
-    );
+    if (!userId) {
+      throw new Error('Account data is corrupted. Please contact support.');
+    }
+
+    try {
+      await account.createMagicURLToken(
+        userId,
+        email,
+        `${window.location.origin}/verify`,
+      );
+    } catch (e) {
+      throw new Error('Failed to send magic link: ' + e.message);
+    }
+
     localStorage.setItem('echo_pending_email', email);
   }
 
   // ── COMPLETE MAGIC LINK ──────────────────────────────
   async function completeMagicURL(userId, secret) {
-    // Exchange the magic link token for a real session
-    await account.updateMagicURLSession(userId, secret);
+    // Exchange magic link token for a real session
+    try {
+      await account.updateMagicURLSession(userId, secret);
+    } catch (e) {
+      throw new Error('Magic link is invalid or expired. Please request a new one. (' + e.message + ')');
+    }
 
     const sessionEmail = localStorage.getItem('echo_pending_email') || '';
     localStorage.removeItem('echo_pending_email');
 
     // Confirm session is active
-    let currentUser = null;
     try {
-      currentUser = await account.get();
+      const currentUser = await account.get();
       setUser(currentUser);
     } catch {
       setUser({ $id: userId, email: sessionEmail, name: sessionEmail, emailVerification: true });
     }
 
-    // Now session is live — safe to call authenticated function
+    // Mark as verified — session is live so function call is authenticated
     try { await setVerified(); } catch (e) { console.error('setVerified failed:', e.message); }
 
     await fetchProfile();
