@@ -21,18 +21,16 @@ const BINS = [
   { id: 'bin-6', label: 'Sports Complex' },
 ];
 
-// ── BAG CODE DISPLAY — shown once, never again ────────────
+// ── BAG CODE DISPLAY ──────────────────────────────────────
 function BagCodeCard({ bagCode, onDone }) {
   const [copied, setCopied]       = useState(false);
   const [confirmed, setConfirmed] = useState(false);
-
   function handleCopy() {
     navigator.clipboard.writeText(bagCode).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
   }
-
   return (
     <div className="fixed inset-0 bg-bark/40 backdrop-blur-sm flex items-center justify-center z-50 px-4">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-8 text-center">
@@ -97,11 +95,9 @@ function SubmitModal({ onClose, onSuccess, userId, groupId }) {
   const [binId, setBinId]     = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
-
   const totalPoints = items.reduce((sum, item) => {
     return sum + (item.itemType ? (ITEM_POINTS[item.itemType] || 10) * item.quantity : 0);
   }, 0);
-
   function addItem() { setItems([...items, { itemType: '', quantity: 1 }]); }
   function removeItem(index) {
     if (items.length === 1) return;
@@ -112,7 +108,6 @@ function SubmitModal({ onClose, onSuccess, userId, groupId }) {
     updated[index] = { ...updated[index], [field]: value };
     setItems(updated);
   }
-
   async function handleSubmit(e) {
     e.preventDefault();
     const validItems = items.filter(i => i.itemType);
@@ -128,7 +123,6 @@ function SubmitModal({ onClose, onSuccess, userId, groupId }) {
       setLoading(false);
     }
   }
-
   return (
     <div className="fixed inset-0 bg-bark/40 backdrop-blur-sm flex items-center justify-center z-50 px-4">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-8 relative max-h-[90vh] overflow-y-auto">
@@ -226,9 +220,9 @@ export default function DashboardPage() {
     setLoadingData(true);
     try {
       const [subs, rwds, redems] = await Promise.all([
-        getUserSubmissions(user.$id),
+        getUserSubmissions(),        // ✅ no args — userId from session
         getAvailableRewards(),
-        getUserRedemptions(user.$id),
+        getUserRedemptions(),        // ✅ no args — userId from session
       ]);
       setSubmissions(subs.documents);
       setRewards(rwds.documents);
@@ -250,7 +244,7 @@ export default function DashboardPage() {
   async function handleDelete(submission) {
     if (!confirm('Delete this deposit? Points will be removed.')) return;
     try {
-      await deleteSubmission(submission.$id, user.$id, submission.totalPoints);
+      await deleteSubmission(submission.$id);   // ✅ no extra args
       await refreshProfile();
       await loadAll();
     } catch (e) { console.error(e); }
@@ -285,13 +279,12 @@ export default function DashboardPage() {
       {showModal && (
         <SubmitModal
           userId={user.$id}
-          groupId={profile?.groupId}
+          groupId={profile?.groupIds?.[0] || null}
           onClose={() => setShowModal(false)}
           onSuccess={handleSubmitSuccess}
         />
       )}
       {bagCode && <BagCodeCard bagCode={bagCode} onDone={() => setBagCode(null)} />}
-
       <div className="max-w-5xl mx-auto">
         {/* Header */}
         <div className="flex items-start justify-between mb-10 gap-4 flex-wrap">
@@ -382,7 +375,6 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
-
           <div className="lg:col-span-2 flex flex-col gap-5">
             <div className="bg-moss rounded-3xl p-7 text-cream flex-1 relative overflow-hidden">
               <div className="absolute -top-6 -right-6 w-24 h-24 rounded-full bg-leaf/30 blur-2xl pointer-events-none" />
@@ -400,16 +392,16 @@ export default function DashboardPage() {
                 <Users className="w-5 h-5 text-moss" strokeWidth={1.5} />
               </div>
               <h3 className="font-display font-semibold text-moss text-base mb-1">
-                {profile?.groupId ? 'My Group' : 'Join a Group'}
+                {profile?.groupIds?.length ? 'My Group' : 'Join a Group'}
               </h3>
               <p className="font-body text-bark/50 text-xs leading-relaxed">
-                {profile?.groupId ? 'View your group stats and leaderboard.' : 'Team up and compete with friends.'}
+                {profile?.groupIds?.length ? 'View your group stats and leaderboard.' : 'Team up and compete with friends.'}
               </p>
             </Link>
           </div>
         </div>
 
-        {/* ── REDEEM REWARDS ── */}
+        {/* Redeem Rewards */}
         <div className="bg-white rounded-3xl border border-eco-100 p-7 mb-6">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-9 h-9 bg-eco-100 rounded-xl flex items-center justify-center">
@@ -418,11 +410,9 @@ export default function DashboardPage() {
             <h2 className="font-display font-semibold text-moss">Redeem Rewards</h2>
             <span className="font-mono text-xs text-bark/40 ml-auto">{points} pts available</span>
           </div>
-
           {redeemError && (
             <div className="bg-red-50 border border-red-100 text-red-700 rounded-2xl p-3 mb-4 font-body text-sm">{redeemError}</div>
           )}
-
           {loadingData ? (
             <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-20 bg-eco-50 rounded-2xl animate-pulse" />)}</div>
           ) : rewards.length === 0 ? (
@@ -430,17 +420,14 @@ export default function DashboardPage() {
           ) : (
             <div className="space-y-0">
               {rewards.map(r => {
-                const codesLeft  = codeCounts[r.$id] ?? 0;
-                const canAfford  = points >= r.pointsCost;
-                const outOfStock = codesLeft === 0;
+                const codesLeft   = codeCounts[r.$id] ?? 0;
+                const canAfford   = points >= r.pointsCost;
+                const outOfStock  = codesLeft === 0;
                 const isRedeeming = redeemingId === r.$id;
-                const disabled   = !canAfford || outOfStock || isRedeeming;
-
+                const disabled    = !canAfford || outOfStock || isRedeeming;
                 return (
                   <div key={r.$id}
                     className={`flex items-center justify-between py-4 border-b border-eco-50 last:border-0 gap-4 flex-wrap transition-opacity duration-200 ${outOfStock ? 'opacity-50' : ''}`}>
-
-                    {/* Brand logo + details */}
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       {r.logoUrl ? (
                         <img src={r.logoUrl} alt={r.brandName}
@@ -452,11 +439,8 @@ export default function DashboardPage() {
                         </div>
                       )}
                       <div className="min-w-0">
-                        {/* Voucher Name */}
                         <p className="font-display font-semibold text-sm text-moss">{r.title}</p>
-                        {/* Description */}
                         <p className="font-body text-xs text-bark/55 mt-0.5 leading-relaxed">{r.description}</p>
-                        {/* Quantity + cost */}
                         <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                           <span className={`font-mono text-xs flex items-center gap-1 ${outOfStock ? 'text-red-400' : 'text-bark/40'}`}>
                             <Tag className="w-3 h-3" />
@@ -467,8 +451,6 @@ export default function DashboardPage() {
                         </div>
                       </div>
                     </div>
-
-                    {/* Redeem / Purchase button */}
                     <button
                       onClick={() => handleRedeem(r)}
                       disabled={disabled}
@@ -490,7 +472,7 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* ── MY COUPONS ── */}
+        {/* My Coupons */}
         <div className="bg-white rounded-3xl border border-eco-100 p-7">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-9 h-9 bg-eco-100 rounded-xl flex items-center justify-center">
