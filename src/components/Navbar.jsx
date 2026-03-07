@@ -49,7 +49,7 @@ export default function Navbar() {
               <>
                 <Link to="/dashboard" className={`nav-link font-display font-medium text-sm tracking-wide transition-colors duration-200 ${isActive('/dashboard') ? 'text-moss active' : 'text-bark/70 hover:text-moss'}`}>Dashboard</Link>
                 <Link to="/groups" className={`nav-link font-display font-medium text-sm tracking-wide transition-colors duration-200 ${isActive('/groups') ? 'text-moss active' : 'text-bark/70 hover:text-moss'}`}>Groups</Link>
-                {profile?.isAdmin && (
+                {(profile?.role === 'admin' || profile?.role === 'superadmin') && (
                   <Link to="/admin" className={`nav-link font-display font-medium text-sm tracking-wide transition-colors duration-200 ${isActive('/admin') ? 'text-moss active' : 'text-bark/70 hover:text-moss'}`}>Admin</Link>
                 )}
               </>
@@ -86,7 +86,7 @@ export default function Navbar() {
             <>
               <Link to="/dashboard" className="block font-display font-medium text-bark/70 py-3 border-b border-eco-100 hover:text-moss">Dashboard</Link>
               <Link to="/groups" className="block font-display font-medium text-bark/70 py-3 border-b border-eco-100 hover:text-moss">Groups</Link>
-              {profile?.isAdmin && (
+              {(profile?.role === 'admin' || profile?.role === 'superadmin') && (
                 <Link to="/admin" className="block font-display font-medium text-bark/70 py-3 border-b border-eco-100 hover:text-moss">Admin</Link>
               )}
             </>
