@@ -12,6 +12,8 @@ import GroupsPage from './pages/GroupsPage';
 import AdminPage from './pages/AdminPage';
 import VerifyCallbackPage from './pages/VerifyCallbackPage';
 import UnverifiedPage from './pages/UnverifiedPage';
+// ✅ FIX #3: Removed dead import of RegisterPage.
+// /register is redirected to /login, so RegisterPage was imported but never rendered.
 
 function Layout({ children }) {
   return (

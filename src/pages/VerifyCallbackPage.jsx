@@ -1,24 +1,25 @@
-
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/useAuth';
 import { CheckCircle, XCircle, Loader, Send, Mail } from 'lucide-react';
 
+// Module-level flag — survives StrictMode's double-invoke of effects
+let verifyAttempted = false;
+
 export default function VerifyCallbackPage() {
-  const [status, setStatus]       = useState('loading');
-  const [resendEmail, setResendEmail] = useState('');
-  const [resendSent, setResendSent]   = useState(false);
+  const [status, setStatus]               = useState('loading');
+  const [resendEmail, setResendEmail]     = useState('');
+  const [resendSent, setResendSent]       = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
   const [resendError, setResendError]     = useState('');
 
-  const [searchParams]       = useSearchParams();
+  const [searchParams]              = useSearchParams();
   const { completeMagicURL, login } = useAuth();
-  const navigate             = useNavigate();
-  const calledRef            = useRef(false);
+  const navigate                    = useNavigate();
 
   useEffect(() => {
-    if (calledRef.current) return;
-    calledRef.current = true;
+    if (verifyAttempted) return;
+    verifyAttempted = true;
 
     const userId = searchParams.get('userId');
     const secret = searchParams.get('secret');
@@ -35,6 +36,7 @@ export default function VerifyCallbackPage() {
       })
       .catch((err) => {
         console.error('Magic URL error:', err);
+        verifyAttempted = false; // reset so user can retry after requesting new link
         setStatus('error');
       });
   }, []);

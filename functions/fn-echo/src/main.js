@@ -38,29 +38,32 @@ function serverClient() {
     .setProject(PROJECT_ID)
     .setKey(API_KEY);
 }
+
 function userClient(jwt) {
   return new Client()
     .setEndpoint(ENDPOINT)
     .setProject(PROJECT_ID)
     .setJWT(jwt);
 }
+
 const db    = () => new Databases(serverClient());
 const teams = () => new Teams(serverClient());
 const users = () => new Users(serverClient());
 
 // ── AUTH HELPERS ──────────────────────────────────────────
-// Appwrite automatically injects x-appwrite-user-id when the function
-// is called from an authenticated session via the SDK.
-// Falls back to JWT header for compatibility.
-async function getUserId(req) {
+// Priority order:
+// 1. x-appwrite-user-id injected by Appwrite when called with cookie session
+// 2. JWT passed in request body (our fallback for localhost/cross-origin)
+// 3. x-appwrite-user-jwt header (kept for compatibility)
+async function getUserId(req, bodyJwt) {
   const injectedId = req.headers['x-appwrite-user-id'];
   if (injectedId && injectedId.trim()) {
     return injectedId.trim();
   }
 
-  const jwt = req.headers['x-appwrite-user-jwt'];
+  const jwt = bodyJwt || req.headers['x-appwrite-user-jwt'];
   if (jwt && jwt.trim()) {
-    const client  = userClient(jwt);
+    const client  = userClient(jwt.trim());
     const account = new Account(client);
     const user    = await account.get();
     return user.$id;
@@ -69,7 +72,6 @@ async function getUserId(req) {
   throw new Error('UNAUTHORIZED: No session.');
 }
 
-// Returns 'superadmin' | 'admin' | 'user'
 async function getRole(userId) {
   try {
     const doc = await db().getDocument(DB_ID, COLS.USERS, userId);
@@ -93,10 +95,8 @@ async function requireSuperAdmin(userId) {
   }
 }
 
-// Sync role to Appwrite Teams
 async function syncTeams(userId, newRole) {
   const t = teams();
-
   for (const teamId of [ADMIN_TEAM, SUPERADMIN_TEAM]) {
     try {
       const memberships = await t.listMemberships(teamId, [Query.equal('userId', userId)]);
@@ -105,7 +105,6 @@ async function syncTeams(userId, newRole) {
       }
     } catch {}
   }
-
   if (newRole === 'admin') {
     try { await t.createMembership(ADMIN_TEAM, [], undefined, userId); } catch {}
   } else if (newRole === 'superadmin') {
@@ -136,9 +135,6 @@ async function handleUsers(action, payload, userId) {
   switch (action) {
     case 'createProfile': {
       const { name, email, userId: explicitId } = payload;
-      // During registration, userId is passed explicitly in the payload
-      // because there is no active session yet (cross-origin cookie issue).
-      // For all other calls, fall back to the session-derived userId.
       const docId = explicitId || userId;
       if (!docId) throw new Error('Cannot create profile: no userId available.');
       try { return await db().getDocument(DB_ID, COLS.USERS, docId); } catch {}
@@ -165,7 +161,6 @@ async function handleUsers(action, payload, userId) {
       return db().listDocuments(DB_ID, COLS.USERS, [
         Query.equal('email', payload.email), Query.limit(1),
       ]);
-
     case 'promoteToAdmin': {
       await requireSuperAdmin(userId);
       const { targetUserId } = payload;
@@ -196,7 +191,6 @@ async function handleUsers(action, payload, userId) {
       await db().deleteDocument(DB_ID, COLS.USERS, targetUserId);
       return { success: true };
     }
-
     default: throw new Error(`Unknown action: users.${action}`);
   }
 }
@@ -229,15 +223,12 @@ async function handleSubmissions(action, payload, userId) {
       const sub       = await db().getDocument(DB_ID, COLS.SUBMISSIONS, submissionId);
       const oldStatus = sub.status;
       if (oldStatus === newStatus) return sub;
-
       const role = await getRole(userId);
       if (sub.userId === userId && role !== 'superadmin') {
         throw new Error('You cannot change the status of your own submission.');
       }
-
       await db().updateDocument(DB_ID, COLS.SUBMISSIONS, submissionId, { status: newStatus });
       const profile = await db().getDocument(DB_ID, COLS.USERS, sub.userId);
-
       if (newStatus === 'verified') {
         await db().updateDocument(DB_ID, COLS.USERS, sub.userId, {
           points:        profile.points + sub.totalPoints,
@@ -496,11 +487,6 @@ async function handleGroups(action, payload, userId) {
 }
 
 // ── GUEST ACTIONS ─────────────────────────────────────────
-// These actions do not require an active session.
-// createProfile is here because during registration there is no session yet
-// (cross-origin cookie issue between Vercel and Appwrite Cloud).
-// The userId is passed explicitly in the payload and is safe because
-// it must match a real Appwrite Auth account ID.
 const GUEST_ACTIONS = new Set([
   'users:getUserByEmail',
   'users:createProfile',
@@ -518,7 +504,8 @@ export default async ({ req, res, log, error }) => {
       return res.json({ success: false, error: 'Invalid request body: ' + e.message }, 400);
     }
 
-    const { domain, action, payload = {} } = body;
+    const { domain, action, payload = {}, jwt: bodyJwt } = body;
+
     if (!domain || !action) {
       return res.json({ success: false, error: 'Missing domain or action.' }, 400);
     }
@@ -530,7 +517,7 @@ export default async ({ req, res, log, error }) => {
     let userId = null;
     if (!isGuest) {
       try {
-        userId = await getUserId(req);
+        userId = await getUserId(req, bodyJwt);
       } catch (e) {
         return res.json({ success: false, error: 'UNAUTHORIZED: No session.' }, 401);
       }
@@ -550,6 +537,7 @@ export default async ({ req, res, log, error }) => {
     }
 
     return res.json({ success: true, data: result });
+
   } catch (err) {
     error(`[fn-echo] ERROR: ${err.message}`);
     const status = err.message?.startsWith('UNAUTHORIZED') ? 403 : 500;

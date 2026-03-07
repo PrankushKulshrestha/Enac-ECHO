@@ -32,7 +32,6 @@ export default function LoginPage() {
     }
   };
 
-  // ── Sent state ──
   if (sent) {
     return (
       <div className="min-h-screen bg-hero-pattern flex items-center justify-center px-6 py-24">
@@ -41,9 +40,7 @@ export default function LoginPage() {
             <Mail className="w-8 h-8 text-moss" strokeWidth={1.5} />
           </div>
           <h1 className="font-display font-bold text-2xl text-moss mb-2">Check your inbox</h1>
-          <p className="font-body text-bark/55 text-sm leading-relaxed mb-2">
-            We sent a sign-in link to
-          </p>
+          <p className="font-body text-bark/55 text-sm leading-relaxed mb-2">We sent a sign-in link to</p>
           <p className="font-display font-semibold text-moss text-sm mb-4">{email}</p>
           <p className="font-body text-bark/45 text-xs leading-relaxed mb-8">
             Click the link in the email to sign in. It expires in 1 hour. Check your spam folder if you don't see it.
@@ -59,7 +56,6 @@ export default function LoginPage() {
     );
   }
 
-  // ── Form ──
   return (
     <div className="min-h-screen bg-hero-pattern flex items-center justify-center px-6 py-24">
       <div className="w-full max-w-md">

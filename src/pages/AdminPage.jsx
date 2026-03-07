@@ -248,7 +248,6 @@ function AddRewardForm({ onCreated, onCancel }) {
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState('');
 
-  // Auto-compute quantity from raw codes input
   const parsedCodes = form.couponCodesRaw
     .split(',').map(c => c.trim()).filter(c => c !== '');
   const quantity = parsedCodes.length;
@@ -272,7 +271,6 @@ function AddRewardForm({ onCreated, onCancel }) {
     }
   }
 
-  // Field config for the text inputs
   const fields = [
     { key: 'title',       label: 'Voucher Name',  placeholder: '10% off on Starbucks',  span: 2 },
     { key: 'brandName',   label: 'Brand Name',    placeholder: 'Starbucks',              span: 1 },
@@ -283,7 +281,6 @@ function AddRewardForm({ onCreated, onCancel }) {
 
   return (
     <div className="bg-white rounded-3xl border border-eco-100 p-7">
-      {/* Heading */}
       <div className="flex items-center gap-3 mb-7">
         <div className="w-10 h-10 bg-eco-100 rounded-xl flex items-center justify-center">
           <Gift className="w-5 h-5 text-moss" strokeWidth={1.5} />
@@ -315,7 +312,6 @@ function AddRewardForm({ onCreated, onCancel }) {
             </div>
           ))}
 
-          {/* Points Cost */}
           <div>
             <label className="font-display font-medium text-xs text-bark/60 mb-1.5 block">Points Cost Per Coupon</label>
             <input
@@ -327,7 +323,6 @@ function AddRewardForm({ onCreated, onCancel }) {
             />
           </div>
 
-          {/* Quantity — read only, auto-calculated */}
           <div>
             <label className="font-display font-medium text-xs text-bark/60 mb-1.5 flex items-center gap-1.5">
               Quantity
@@ -341,7 +336,6 @@ function AddRewardForm({ onCreated, onCancel }) {
             </div>
           </div>
 
-          {/* Coupon Codes — full width */}
           <div className="sm:col-span-2">
             <label className="font-display font-medium text-xs text-bark/60 mb-1.5 block">
               Coupon Codes
@@ -354,7 +348,6 @@ function AddRewardForm({ onCreated, onCancel }) {
               rows={3}
               className="w-full px-4 py-3 border-2 border-eco-100 rounded-xl font-mono text-sm text-bark focus:outline-none focus:border-moss transition-colors bg-cream/50 resize-none"
             />
-            {/* Live preview of parsed codes */}
             {quantity > 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {parsedCodes.slice(0, 6).map((c, i) => (
@@ -368,7 +361,6 @@ function AddRewardForm({ onCreated, onCancel }) {
           </div>
         </div>
 
-        {/* Actions */}
         <div className="flex gap-3 pt-2 border-t border-eco-50">
           <button type="button" onClick={onCancel}
             className="flex-1 sm:flex-none px-6 bg-eco-50 text-moss font-display font-semibold text-sm py-3 rounded-2xl hover:bg-eco-100 transition-colors">
@@ -425,9 +417,12 @@ export default function AdminPage() {
     setCodeCounts(counts);
   }
 
+  // ✅ FIX #5: Simplified isOwnSubmission — removed redundant u.userId fallback.
+  // The users collection uses $id as the primary key consistently.
+  // Checking both u.$id and u.userId was a sign of data model confusion.
   function isOwnSubmission(sub) {
     if (sub.userId === user.$id) return true;
-    const submitter = users.find(u => u.$id === sub.userId || u.userId === sub.userId);
+    const submitter = users.find(u => u.$id === sub.userId);
     return !!(submitter && profile?.email && submitter.email === profile.email);
   }
 
@@ -469,7 +464,6 @@ export default function AdminPage() {
   async function handleAddCodes(rewardId, codes) {
     await addCouponCodesToReward(rewardId, codes);
     await refreshCodeCounts();
-    // Re-mount the codes panel to show fresh data
     setExpandedReward(null);
     setTimeout(() => setExpandedReward(rewardId), 50);
   }
@@ -657,7 +651,6 @@ export default function AdminPage() {
             {/* REWARDS */}
             {tab === 'rewards' && (
               <div className="space-y-6">
-                {/* Header row */}
                 <div className="flex items-center justify-between">
                   <h2 className="font-display font-semibold text-moss">
                     Rewards<span className="font-mono text-xs text-bark/40 ml-3">{rewards.length} total</span>
@@ -669,7 +662,6 @@ export default function AdminPage() {
                   )}
                 </div>
 
-                {/* Add reward form */}
                 {showRewardForm && (
                   <AddRewardForm
                     onCreated={() => { setShowRewardForm(false); loadAll(); }}
@@ -677,7 +669,6 @@ export default function AdminPage() {
                   />
                 )}
 
-                {/* Rewards list */}
                 <div className="bg-white rounded-3xl border border-eco-100 p-7">
                   {rewards.length === 0 ? (
                     <div className="text-center py-10">
@@ -694,9 +685,7 @@ export default function AdminPage() {
                         const isExpanded = expandedReward === r.$id;
                         return (
                           <div key={r.$id} className="py-5 border-b border-eco-50 last:border-0">
-                            {/* Main reward row */}
                             <div className="flex items-start justify-between gap-4 flex-wrap">
-                              {/* Left: logo + info */}
                               <div className="flex items-start gap-3 flex-1 min-w-0">
                                 {r.logoUrl ? (
                                   <img src={r.logoUrl} alt={r.brandName}
@@ -725,7 +714,6 @@ export default function AdminPage() {
                                 </div>
                               </div>
 
-                              {/* Right: actions */}
                               <div className="flex items-center gap-2 shrink-0 flex-wrap">
                                 <button onClick={() => setExpandedReward(isExpanded ? null : r.$id)}
                                   className="flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-xl bg-eco-50 text-moss hover:bg-eco-100 transition-colors">
@@ -751,7 +739,6 @@ export default function AdminPage() {
                               </div>
                             </div>
 
-                            {/* Inline codes panel */}
                             {isExpanded && (
                               <CodesPanel reward={r} onCodesChanged={refreshCodeCounts} />
                             )}
