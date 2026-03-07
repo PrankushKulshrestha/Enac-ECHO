@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Leaf, Mail, AlertCircle, Send } from 'lucide-react';
+import { Leaf, Mail, User, AlertCircle, Send } from 'lucide-react';
 import { useAuth } from '../lib/useAuth';
 
 const NSUT_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@nsut\.ac\.in$/i;
@@ -8,6 +8,7 @@ const DEV_ALLOWLIST = ['kulshresthaprankush@gmail.com'];
 
 export default function LoginPage() {
   const [email, setEmail]     = useState('');
+  const [name, setName]       = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
   const [sent, setSent]       = useState(false);
@@ -23,7 +24,7 @@ export default function LoginPage() {
     }
     setLoading(true);
     try {
-      await login(email);
+      await login(email, name.trim());
       setSent(true);
     } catch (err) {
       setError(err.message || 'Something went wrong. Please try again.');
@@ -46,7 +47,7 @@ export default function LoginPage() {
             Click the link in the email to sign in. It expires in 1 hour. Check your spam folder if you don't see it.
           </p>
           <button
-            onClick={() => { setSent(false); setEmail(''); }}
+            onClick={() => { setSent(false); setEmail(''); setName(''); }}
             className="btn-secondary w-full justify-center"
           >
             Use a different email
@@ -76,6 +77,22 @@ export default function LoginPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className="font-display font-medium text-sm text-bark/70 mb-2 block">
+                Full Name <span className="font-body font-normal text-bark/40">(optional)</span>
+              </label>
+              <div className="relative">
+                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-bark/40" />
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Your Name"
+                  className="w-full pl-11 pr-4 py-3.5 border-2 border-eco-100 rounded-2xl font-body text-sm text-bark focus:outline-none focus:border-moss transition-colors duration-200 bg-cream/50"
+                />
+              </div>
+            </div>
+
             <div>
               <label className="font-display font-medium text-sm text-bark/70 mb-2 block">
                 Email Address
