@@ -86,8 +86,8 @@ export async function updateUserProfile(name) {
   return _execute('users', 'updateProfile', { name });
 }
 
-export async function setVerified() {
-  return _execute('users', 'setVerified');
+export async function setVerified(name = '') {
+  return _execute('users', 'setVerified', { name });
 }
 
 export async function getAllUsers() {

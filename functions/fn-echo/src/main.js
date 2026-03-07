@@ -186,7 +186,7 @@ async function handleUsers(action, payload, userId) {
         if (e.code === 404) {
           // First-time login — create the profile document
           const u = await users().get(userId);
-          const resolvedName = displayName || u.name || u.email.split("@")[0];
+          const resolvedName = displayName || "";
           return db().createDocument(DB_ID, COLS.USERS, userId, {
             userId,
             name: resolvedName,
