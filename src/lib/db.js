@@ -63,6 +63,15 @@ export async function getUserByEmail(email) {
   ]);
 }
 
+// Direct DB query — used as fallback when server function is unavailable
+export async function getUserProfileDirect(email) {
+  const result = await databases.listDocuments(DB_ID, COLLECTIONS.USERS, [
+    Query.equal('email', email),
+    Query.limit(1),
+  ]);
+  return result?.documents?.[0] ?? null;
+}
+
 // ── ROLE MANAGEMENT (superadmin only) ─────────────────────
 export async function promoteToAdmin(targetUserId) {
   return _execute('users', 'promoteToAdmin', { targetUserId });

@@ -13,11 +13,13 @@ export default function RegisterPage() {
   const navigate            = useNavigate();
 
   const NSUT_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@nsut\.ac\.in$/i;
+  const DEV_ALLOWLIST = ['iitjee202312345@gmail.com']; // dev-only exceptions
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (!NSUT_EMAIL_REGEX.test(email)) {
+    const trimmed = email.trim().toLowerCase();
+    if (!NSUT_EMAIL_REGEX.test(trimmed) && !DEV_ALLOWLIST.includes(trimmed)) {
       setError('Only @nsut.ac.in email addresses are allowed.');
       return;
     }

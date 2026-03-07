@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { account, ID } from './appwrite';
-import { createUserProfile, getUserByEmail, setVerified, getUserProfile } from './db';
+import { createUserProfile, getUserByEmail, setVerified, getUserProfile, getUserProfileDirect } from './db';
 
 const AuthContext = createContext(null);
 
@@ -15,7 +15,7 @@ export function AuthProvider({ children }) {
     try {
       const currentUser = await account.get();
       setUser(currentUser);
-      try { await fetchProfile(); } catch { setProfile(null); }
+      await fetchProfile(currentUser.email);
     } catch {
       setUser(null);
       setProfile(null);
@@ -24,12 +24,18 @@ export function AuthProvider({ children }) {
     }
   }
 
-  async function fetchProfile() {
+  async function fetchProfile(email) {
     try {
       const doc = await getUserProfile();
       setProfile(doc);
     } catch {
-      setProfile(null);
+      // Server function failed — fall back to direct DB query using known email
+      try {
+        const doc = await getUserProfileDirect(email);
+        setProfile(doc ?? null);
+      } catch {
+        setProfile(null);
+      }
     }
   }
 
@@ -112,13 +118,13 @@ export function AuthProvider({ children }) {
       const currentUser = await account.get();
       setUser(currentUser);
     } catch {
-      setUser({ $id: userId, email: sessionEmail, name: sessionEmail, emailVerification: true });
+      setUser({ $id: userId, email: sessionEmail, name: '', emailVerification: true });
     }
 
     // Mark as verified — session is live so function call is authenticated
     try { await setVerified(); } catch (e) { console.error('setVerified failed:', e.message); }
 
-    await fetchProfile();
+    await fetchProfile(sessionEmail);
     setLoading(false);
   }
 
@@ -129,7 +135,12 @@ export function AuthProvider({ children }) {
   }
 
   async function refreshProfile() {
-    await fetchProfile();
+    try {
+      const currentUser = await account.get();
+      await fetchProfile(currentUser.email);
+    } catch {
+      await fetchProfile('');
+    }
   }
 
   return (
