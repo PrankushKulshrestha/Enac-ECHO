@@ -1,10 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/useAuth';
 import { CheckCircle, XCircle, Loader, Send, Mail } from 'lucide-react';
-
-// Module-level flag — survives StrictMode's double-invoke of effects
-let verifyAttempted = false;
 
 export default function VerifyCallbackPage() {
   const [status, setStatus]               = useState('loading');
@@ -13,13 +10,20 @@ export default function VerifyCallbackPage() {
   const [resendLoading, setResendLoading] = useState(false);
   const [resendError, setResendError]     = useState('');
 
-  const [searchParams]              = useSearchParams();
-  const { completeMagicURL, login } = useAuth();
-  const navigate                    = useNavigate();
+  // useRef instead of a module-level flag — resets properly on each page visit
+  const verifyAttempted = useRef(false);
+
+  const [searchParams]                    = useSearchParams();
+  const { user, loading, completeMagicURL, login } = useAuth();
+  const navigate                          = useNavigate();
 
   useEffect(() => {
-    if (verifyAttempted) return;
-    verifyAttempted = true;
+    // Wait until AuthContext has finished its initial checkAuth()
+    // so we know for sure whether user is already logged in or not.
+    if (loading) return;
+
+    if (verifyAttempted.current) return;
+    verifyAttempted.current = true;
 
     const userId = searchParams.get('userId');
     const secret = searchParams.get('secret');
@@ -29,6 +33,14 @@ export default function VerifyCallbackPage() {
 
     if (!userId || !secret) { setStatus('error'); return; }
 
+    // Already logged in — this magic link was already used successfully.
+    // Just go to dashboard.
+    if (user) {
+      setStatus('success');
+      setTimeout(() => navigate('/dashboard', { replace: true }), 1000);
+      return;
+    }
+
     completeMagicURL(userId, secret)
       .then(() => {
         setStatus('success');
@@ -36,10 +48,18 @@ export default function VerifyCallbackPage() {
       })
       .catch((err) => {
         console.error('Magic URL error:', err);
-        verifyAttempted = false; // reset so user can retry after requesting new link
+
+        // Session already active means the link worked previously — redirect
+        if (err.message?.includes('session is active') || err.message?.includes('prohibited')) {
+          setStatus('success');
+          setTimeout(() => navigate('/dashboard', { replace: true }), 1000);
+          return;
+        }
+
+        verifyAttempted.current = false; // allow retry after requesting new link
         setStatus('error');
       });
-  }, []);
+  }, [loading]); // re-run once loading flips to false
 
   async function handleResend(e) {
     e.preventDefault();

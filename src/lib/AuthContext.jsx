@@ -65,7 +65,18 @@ export function AuthProvider({ children }) {
   }
 
   async function completeMagicURL(userId, secret) {
-    // Step 1: Exchange the magic link token for a real session
+    // If there's already an active session, delete it first.
+    // Appwrite throws "Creation of a session is prohibited when a session is active"
+    // if you try to exchange a magic link token while logged in.
+    try {
+      await account.deleteSession('current');
+      setUser(null);
+      setProfile(null);
+    } catch {
+      // No active session — this is the normal path, ignore the error.
+    }
+
+    // Exchange the magic link token for a real session
     try {
       await account.updateMagicURLSession(userId, secret);
     } catch (e) {
@@ -74,8 +85,7 @@ export function AuthProvider({ children }) {
 
     localStorage.removeItem('echo_pending_email');
 
-    // Step 2: Wait until account.get() confirms the session is active.
-    // Appwrite can take a moment to propagate the session after token exchange.
+    // Wait for session to become active
     let currentUser = null;
     for (let i = 0; i < 10; i++) {
       try { currentUser = await account.get(); break; }
@@ -84,11 +94,7 @@ export function AuthProvider({ children }) {
     if (!currentUser) throw new Error('Session did not become active. Please try again.');
     setUser(currentUser);
 
-    // Step 3: Confirm JWT issuance works before proceeding.
-    // The JWT endpoint sometimes lags behind the session endpoint — we must
-    // verify it succeeds here, because _execute() depends on it immediately.
-    // Without this confirmed wait, _execute() gets a silent JWT failure and
-    // sends no auth header, causing the function to return 401.
+    // Wait for JWT endpoint to be ready
     let jwtReady = false;
     for (let i = 0; i < 10; i++) {
       try {
@@ -100,10 +106,9 @@ export function AuthProvider({ children }) {
       }
     }
     if (!jwtReady) {
-      console.warn('JWT endpoint did not become ready — proceeding anyway.');
+      console.warn('JWT endpoint not ready after 5s — proceeding anyway.');
     }
 
-    // Step 4: Now safe to call server functions
     try { await setVerified(); } catch (e) { console.error('setVerified failed:', e.message); }
     await fetchProfile();
   }
