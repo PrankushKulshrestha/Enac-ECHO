@@ -10,9 +10,17 @@ export default function LoginPage() {
   const [sent, setSent]     = useState(false);
   const { login }           = useAuth();
 
+  const NSUT_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@nsut\.ac\.in$/i;
+  const DEV_ALLOWLIST = ['iitjee202312345@gmail.com']; // dev-only exceptions
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    const trimmed = email.trim().toLowerCase();
+    if (!NSUT_EMAIL_REGEX.test(trimmed) && !DEV_ALLOWLIST.includes(trimmed)) {
+      setError('Only @nsut.ac.in email addresses are allowed.');
+      return;
+    }
     setLoading(true);
     try {
       await login(email);

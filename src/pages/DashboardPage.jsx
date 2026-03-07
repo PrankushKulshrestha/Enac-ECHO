@@ -202,6 +202,7 @@ function SubmitModal({ onClose, onSuccess, userId, groupId }) {
 // ── DASHBOARD ─────────────────────────────────────────────
 export default function DashboardPage() {
   const { user, profile, refreshProfile } = useAuth();
+  console.log('DEBUG profile:', JSON.stringify(profile)); // add this
   const [submissions, setSubmissions]     = useState([]);
   const [rewards, setRewards]             = useState([]);
   const [redemptions, setRedemptions]     = useState([]);
