@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Leaf, Mail, User, AlertCircle, CheckCircle, Send } from 'lucide-react';
-import { useAuth } from '../lib/AuthContext';
+import { useAuth } from '../lib/useAuth';
 
 export default function RegisterPage() {
   const [name, setName]     = useState('');
@@ -13,13 +13,14 @@ export default function RegisterPage() {
   const navigate            = useNavigate();
 
   const NSUT_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@nsut\.ac\.in$/i;
-  const DEV_ALLOWLIST = ['iitjee202312345@gmail.com']; // dev-only exceptions
+  const DEV_ALLOWLIST = ['iitjee202312345@gmail.com', 'kulshresthaprankush@gmail.com']; // dev-only exceptions
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     const trimmed = email.trim().toLowerCase();
     if (!NSUT_EMAIL_REGEX.test(trimmed) && !DEV_ALLOWLIST.includes(trimmed)) {
+      console.log(DEV_ALLOWLIST.includes(trimmed), trimmed);
       setError('Only @nsut.ac.in email addresses are allowed.');
       return;
     }

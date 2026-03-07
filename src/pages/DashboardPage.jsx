@@ -10,7 +10,7 @@ import {
   Clock, Plus, X, ChevronDown, Users, Trash2,
   ClipboardCopy, CheckCircle, Ticket, Tag,
 } from 'lucide-react';
-import { useAuth } from '../lib/AuthContext';
+import { useAuth } from '../lib/useAuth';
 
 const BINS = [
   { id: 'bin-1', label: 'Main Gate Lobby' },
@@ -202,7 +202,7 @@ function SubmitModal({ onClose, onSuccess, userId, groupId }) {
 // ── DASHBOARD ─────────────────────────────────────────────
 export default function DashboardPage() {
   const { user, profile, refreshProfile } = useAuth();
-  console.log('DEBUG profile:', JSON.stringify(profile)); // add this
+
   const [submissions, setSubmissions]     = useState([]);
   const [rewards, setRewards]             = useState([]);
   const [redemptions, setRedemptions]     = useState([]);

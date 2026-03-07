@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Mail, RefreshCw, LogOut, CheckCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../lib/AuthContext";
+import { useAuth } from '../lib/useAuth';
 
 export default function UnverifiedPage() {
   const { user, logout, login } = useAuth();

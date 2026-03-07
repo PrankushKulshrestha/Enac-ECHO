@@ -4,7 +4,7 @@ import {
   Leaf, TrendingUp, Package, Trash2, AlertTriangle,
   KeyRound, Plus, ChevronDown, ChevronUp, Tag, Hash,
 } from 'lucide-react';
-import { useAuth } from '../lib/AuthContext';
+import { useAuth } from '../lib/useAuth';
 import {
   getAllUsers, getAllSubmissions, getAllRewards,
   updateReward, createReward, deleteReward,

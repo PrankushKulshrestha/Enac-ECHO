@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, MapPin, Recycle, Coins, Gift, Leaf, ChevronDown, Users, Building2, Zap } from 'lucide-react';
-import { useAuth } from '../lib/AuthContext';
+import { useAuth } from '../lib/useAuth';
 
 // Animated counter hook
 function useCounter(target, duration = 2000, start = false) {

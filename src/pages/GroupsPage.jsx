@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Users, Plus, Mail, X, LogOut, Trophy, Leaf, Check } from 'lucide-react';
-import { useAuth } from '../lib/AuthContext';
+import { useAuth } from '../lib/useAuth';
 import {
   createGroup, getGroups, sendInvite,
   getPendingInvites, acceptInvite, declineInvite,

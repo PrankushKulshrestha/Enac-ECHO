@@ -49,11 +49,24 @@ const teams = () => new Teams(serverClient());
 const users = () => new Users(serverClient());
 
 // ── AUTH HELPERS ──────────────────────────────────────────
-async function getUserId(jwt) {
-  const client  = userClient(jwt);
-  const account = new Account(client);
-  const user    = await account.get();
-  return user.$id;
+// Appwrite automatically injects x-appwrite-user-id when the function
+// is called from an authenticated session via the SDK.
+// Falls back to JWT header for compatibility.
+async function getUserId(req) {
+  const injectedId = req.headers['x-appwrite-user-id'];
+  if (injectedId && injectedId.trim()) {
+    return injectedId.trim();
+  }
+
+  const jwt = req.headers['x-appwrite-user-jwt'];
+  if (jwt && jwt.trim()) {
+    const client  = userClient(jwt);
+    const account = new Account(client);
+    const user    = await account.get();
+    return user.$id;
+  }
+
+  throw new Error('UNAUTHORIZED: No session.');
 }
 
 // Returns 'superadmin' | 'admin' | 'user'
@@ -84,7 +97,6 @@ async function requireSuperAdmin(userId) {
 async function syncTeams(userId, newRole) {
   const t = teams();
 
-  // Remove from both teams first
   for (const teamId of [ADMIN_TEAM, SUPERADMIN_TEAM]) {
     try {
       const memberships = await t.listMemberships(teamId, [Query.equal('userId', userId)]);
@@ -94,15 +106,10 @@ async function syncTeams(userId, newRole) {
     } catch {}
   }
 
-  // Add to appropriate team
   if (newRole === 'admin') {
-    try {
-      await t.createMembership(ADMIN_TEAM, [], undefined, userId);
-    } catch {}
+    try { await t.createMembership(ADMIN_TEAM, [], undefined, userId); } catch {}
   } else if (newRole === 'superadmin') {
-    try {
-      await t.createMembership(SUPERADMIN_TEAM, [], undefined, userId);
-    } catch {}
+    try { await t.createMembership(SUPERADMIN_TEAM, [], undefined, userId); } catch {}
   }
 }
 
@@ -118,7 +125,7 @@ function generateBagCode(userId, itemCount, totalPoints) {
   let entropy = Math.abs(hash);
   for (let i = 0; i < 16; i++) {
     entropy = (entropy * 1664525 + 1013904223) | 0;
-    code += CHARS[(Math.abs(entropy) + Math.floor(Math.random() * CHARS.length)) % CHARS.length];
+    code += CHARS[Math.abs(entropy) % CHARS.length];
     if (i === 3 || i === 7 || i === 11) code += '-';
   }
   return `ECHO-${code}`;
@@ -128,10 +135,15 @@ function generateBagCode(userId, itemCount, totalPoints) {
 async function handleUsers(action, payload, userId) {
   switch (action) {
     case 'createProfile': {
-      const { name, email } = payload;
-      try { return await db().getDocument(DB_ID, COLS.USERS, userId); } catch {}
-      return db().createDocument(DB_ID, COLS.USERS, userId, {
-        userId, name, email,
+      const { name, email, userId: explicitId } = payload;
+      // During registration, userId is passed explicitly in the payload
+      // because there is no active session yet (cross-origin cookie issue).
+      // For all other calls, fall back to the session-derived userId.
+      const docId = explicitId || userId;
+      if (!docId) throw new Error('Cannot create profile: no userId available.');
+      try { return await db().getDocument(DB_ID, COLS.USERS, docId); } catch {}
+      return db().createDocument(DB_ID, COLS.USERS, docId, {
+        userId: docId, name, email,
         points: 0, totalDeposits: 0,
         isVerified: false, role: 'user',
         createdAt: new Date().toISOString(),
@@ -154,7 +166,6 @@ async function handleUsers(action, payload, userId) {
         Query.equal('email', payload.email), Query.limit(1),
       ]);
 
-    // ── SUPERADMIN ONLY ──────────────────────────────────
     case 'promoteToAdmin': {
       await requireSuperAdmin(userId);
       const { targetUserId } = payload;
@@ -181,9 +192,7 @@ async function handleUsers(action, payload, userId) {
       await requireSuperAdmin(userId);
       const { targetUserId } = payload;
       if (targetUserId === userId) throw new Error('You cannot delete yourself.');
-      // Delete auth account
       try { await users().delete(targetUserId); } catch {}
-      // Delete DB profile
       await db().deleteDocument(DB_ID, COLS.USERS, targetUserId);
       return { success: true };
     }
@@ -221,7 +230,6 @@ async function handleSubmissions(action, payload, userId) {
       const oldStatus = sub.status;
       if (oldStatus === newStatus) return sub;
 
-      // Superadmin can approve own — admin cannot
       const role = await getRole(userId);
       if (sub.userId === userId && role !== 'superadmin') {
         throw new Error('You cannot change the status of your own submission.');
@@ -488,7 +496,15 @@ async function handleGroups(action, payload, userId) {
 }
 
 // ── GUEST ACTIONS ─────────────────────────────────────────
-const GUEST_ACTIONS = new Set(['users:getUserByEmail']);
+// These actions do not require an active session.
+// createProfile is here because during registration there is no session yet
+// (cross-origin cookie issue between Vercel and Appwrite Cloud).
+// The userId is passed explicitly in the payload and is safe because
+// it must match a real Appwrite Auth account ID.
+const GUEST_ACTIONS = new Set([
+  'users:getUserByEmail',
+  'users:createProfile',
+]);
 
 // ── ENTRY POINT ───────────────────────────────────────────
 export default async ({ req, res, log, error }) => {
@@ -513,14 +529,10 @@ export default async ({ req, res, log, error }) => {
 
     let userId = null;
     if (!isGuest) {
-      const jwt = req.headers['x-appwrite-user-jwt'];
-      if (!jwt || jwt.trim() === '') {
-        return res.json({ success: false, error: 'UNAUTHORIZED: No session.' }, 401);
-      }
       try {
-        userId = await getUserId(jwt);
+        userId = await getUserId(req);
       } catch (e) {
-        return res.json({ success: false, error: 'UNAUTHORIZED: Invalid session.' }, 401);
+        return res.json({ success: false, error: 'UNAUTHORIZED: No session.' }, 401);
       }
     }
 

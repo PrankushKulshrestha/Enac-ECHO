@@ -16,12 +16,18 @@ export const ITEM_POINTS = {
 };
 
 // ── CORE CALLER ───────────────────────────────────────────
+// Reads the JWT from localStorage and passes it as a header so the
+// server function can authenticate the caller even without a cookie session.
 async function _execute(domain, action, payload = {}) {
   const body = JSON.stringify({ domain, action, payload });
+  const jwt  = localStorage.getItem('echo_jwt');
+
+  const headers = jwt ? { 'x-appwrite-user-jwt': jwt } : {};
+
   let execution;
   try {
     execution = await functions.createExecution(
-      FN_ID, body, false, '/', 'POST', {},
+      FN_ID, body, false, '/', 'POST', headers,
     );
   } catch (e) {
     throw new Error('Could not reach server function: ' + e.message);
@@ -41,9 +47,37 @@ async function _execute(domain, action, payload = {}) {
 }
 
 // ── USERS ─────────────────────────────────────────────────
-export async function createUserProfile(name, email) {
-  return _execute('users', 'createProfile', { name, email });
+
+// createUserProfile uses raw fetch — guest action, no session needed.
+export async function createUserProfile(name, email, userId) {
+  const endpoint  = import.meta.env.VITE_APPWRITE_ENDPOINT;
+  const projectId = import.meta.env.VITE_APPWRITE_PROJECT_ID;
+
+  const response = await fetch(
+    `${endpoint}/functions/${FN_ID}/executions`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Appwrite-Project': projectId,
+      },
+      body: JSON.stringify({
+        body: JSON.stringify({
+          domain: 'users',
+          action: 'createProfile',
+          payload: { name, email, userId },
+        }),
+        async: false,
+      }),
+    }
+  );
+
+  const execution = await response.json();
+  const result = JSON.parse(execution.responseBody);
+  if (!result.success) throw new Error(result.error);
+  return result.data;
 }
+
 export async function getUserProfile() {
   return _execute('users', 'getProfile');
 }

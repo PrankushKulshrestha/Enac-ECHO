@@ -1,17 +1,17 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Leaf, Mail, AlertCircle, Send } from 'lucide-react';
-import { useAuth } from '../lib/AuthContext';
+import { useAuth } from '../lib/useAuth';
+
+const NSUT_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@nsut\.ac\.in$/i;
+const DEV_ALLOWLIST = ['kulshresthaprankush@gmail.com'];
 
 export default function LoginPage() {
-  const [email, setEmail]   = useState('');
+  const [email, setEmail]     = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError]   = useState('');
-  const [sent, setSent]     = useState(false);
-  const { login }           = useAuth();
-
-  const NSUT_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@nsut\.ac\.in$/i;
-  const DEV_ALLOWLIST = ['iitjee202312345@gmail.com']; // dev-only exceptions
+  const [error, setError]     = useState('');
+  const [sent, setSent]       = useState(false);
+  const { login }             = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -68,8 +68,8 @@ export default function LoginPage() {
             <Link to="/" className="inline-flex items-center justify-center w-14 h-14 bg-moss rounded-2xl mb-4 hover:bg-leaf transition-colors duration-300">
               <Leaf className="w-7 h-7 text-cream" />
             </Link>
-            <h1 className="font-display font-bold text-2xl text-moss mb-1">Welcome Back</h1>
-            <p className="font-body text-bark/55 text-sm">Enter your email to receive a sign-in link</p>
+            <h1 className="font-display font-bold text-2xl text-moss mb-1">Welcome to Project ECHO</h1>
+            <p className="font-body text-bark/55 text-sm">Enter your NSUT email to receive a sign-in link</p>
           </div>
 
           {error && (
@@ -119,18 +119,9 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <div className="flex items-center gap-4 my-6">
-            <div className="flex-1 h-px bg-eco-100" />
-            <span className="font-mono text-xs text-bark/35 tracking-widest uppercase">or</span>
-            <div className="flex-1 h-px bg-eco-100" />
-          </div>
-
-          <div className="bg-eco-50 border border-eco-100 rounded-2xl p-5 text-center">
-            <p className="font-body text-sm text-bark/60 mb-3">New to Project ECHO?</p>
-            <Link to="/register" className="btn-secondary text-sm py-2.5 px-6 inline-flex justify-center w-full">
-              Create an Account
-            </Link>
-          </div>
+          <p className="text-center font-body text-xs text-bark/40 mt-6">
+            A new account will be created automatically on first sign-in.
+          </p>
         </div>
       </div>
     </div>
