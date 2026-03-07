@@ -123,8 +123,12 @@ export function AuthProvider({ children }) {
       console.warn('JWT endpoint not ready after 5s — proceeding anyway.');
     }
 
+    // Write name to Appwrite auth record so it shows in the console
+    if (pendingName) {
+      try { await account.updateName(pendingName); } catch (e) { console.warn('updateName failed:', e.message); }
+    }
+
     try {
-      // Pass the name to setVerified so the server can store it when creating the profile doc
       await setVerified(pendingName || currentUser.name || '');
     } catch (e) {
       console.error('setVerified failed:', e.message);

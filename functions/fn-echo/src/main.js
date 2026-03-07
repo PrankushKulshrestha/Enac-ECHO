@@ -54,12 +54,8 @@ const teams = () => new Teams(serverClient());
 const users = () => new Users(serverClient());
 
 async function getUserId(req, bodyJwt) {
-  // 1. Appwrite-injected userId (cookie session via browser)
   const injectedId = req.headers["x-appwrite-user-id"];
   if (injectedId && injectedId.trim()) return injectedId.trim();
-
-  // 2. JWT from request body (our primary method — avoids SDK header issues)
-  // 3. JWT from header (legacy fallback)
   const jwt = bodyJwt || req.headers["x-appwrite-user-jwt"];
   if (jwt && jwt.trim()) {
     const client = userClient(jwt.trim());
@@ -67,7 +63,6 @@ async function getUserId(req, bodyJwt) {
     const user = await account.get();
     return user.$id;
   }
-
   throw new Error("UNAUTHORIZED: No session.");
 }
 
@@ -107,13 +102,9 @@ async function syncTeams(userId, newRole) {
     } catch {}
   }
   if (newRole === "admin") {
-    try {
-      await t.createMembership(ADMIN_TEAM, [], undefined, userId);
-    } catch {}
+    try { await t.createMembership(ADMIN_TEAM, [], undefined, userId); } catch {}
   } else if (newRole === "superadmin") {
-    try {
-      await t.createMembership(SUPERADMIN_TEAM, [], undefined, userId);
-    } catch {}
+    try { await t.createMembership(SUPERADMIN_TEAM, [], undefined, userId); } catch {}
   }
 }
 
@@ -137,9 +128,6 @@ function generateBagCode(userId, itemCount, totalPoints) {
 async function handleUsers(action, payload, userId) {
   switch (action) {
     case "resolveUser": {
-      // FIX: was missing from GUEST_ACTIONS — any pre-auth lookup by email.
-      // Try to find existing user by email; if not found, return a new unique ID.
-      // This is called before magic link is sent so must work without a session.
       const { email } = payload;
       const existing = await db().listDocuments(DB_ID, COLS.USERS, [
         Query.equal("email", email),
@@ -153,11 +141,8 @@ async function handleUsers(action, payload, userId) {
     case "createProfile": {
       const { name, email, userId: explicitId } = payload;
       const docId = explicitId || userId;
-      if (!docId)
-        throw new Error("Cannot create profile: no userId available.");
-      try {
-        return await db().getDocument(DB_ID, COLS.USERS, docId);
-      } catch {}
+      if (!docId) throw new Error("Cannot create profile: no userId available.");
+      try { return await db().getDocument(DB_ID, COLS.USERS, docId); } catch {}
       return db().createDocument(DB_ID, COLS.USERS, docId, {
         userId: docId,
         name,
@@ -177,8 +162,19 @@ async function handleUsers(action, payload, userId) {
       });
     case "setVerified": {
       const displayName = payload.name || "";
+
+      // Always update the Appwrite auth record name via the admin API.
+      // account.updateName() on the client is unreliable for reflecting in
+      // the Appwrite console — the server-side users().updateName() is authoritative.
+      if (displayName) {
+        try { await users().updateName(userId, displayName); } catch (e) {
+          // Non-fatal — profile update still proceeds
+          log(`[fn-echo] updateName warning: ${e.message}`);
+        }
+      }
+
       try {
-        // Profile already exists — update isVerified (and name if provided)
+        // Profile exists — update isVerified and name if provided
         const updateData = { isVerified: true };
         if (displayName) updateData.name = displayName;
         return await db().updateDocument(DB_ID, COLS.USERS, userId, updateData);
@@ -186,7 +182,7 @@ async function handleUsers(action, payload, userId) {
         if (e.code === 404) {
           // First-time login — create the profile document
           const u = await users().get(userId);
-          const resolvedName = displayName || "";
+          const resolvedName = displayName || u.name || '';
           return db().createDocument(DB_ID, COLS.USERS, userId, {
             userId,
             name: resolvedName,
@@ -216,40 +212,30 @@ async function handleUsers(action, payload, userId) {
     case "promoteToAdmin": {
       await requireSuperAdmin(userId);
       const { targetUserId } = payload;
-      await db().updateDocument(DB_ID, COLS.USERS, targetUserId, {
-        role: "admin",
-      });
+      await db().updateDocument(DB_ID, COLS.USERS, targetUserId, { role: "admin" });
       await syncTeams(targetUserId, "admin");
       return { success: true };
     }
     case "promoteToSuperAdmin": {
       await requireSuperAdmin(userId);
       const { targetUserId } = payload;
-      await db().updateDocument(DB_ID, COLS.USERS, targetUserId, {
-        role: "superadmin",
-      });
+      await db().updateDocument(DB_ID, COLS.USERS, targetUserId, { role: "superadmin" });
       await syncTeams(targetUserId, "superadmin");
       return { success: true };
     }
     case "demoteToUser": {
       await requireSuperAdmin(userId);
       const { targetUserId } = payload;
-      if (targetUserId === userId)
-        throw new Error("You cannot demote yourself.");
-      await db().updateDocument(DB_ID, COLS.USERS, targetUserId, {
-        role: "user",
-      });
+      if (targetUserId === userId) throw new Error("You cannot demote yourself.");
+      await db().updateDocument(DB_ID, COLS.USERS, targetUserId, { role: "user" });
       await syncTeams(targetUserId, "user");
       return { success: true };
     }
     case "deleteUser": {
       await requireSuperAdmin(userId);
       const { targetUserId } = payload;
-      if (targetUserId === userId)
-        throw new Error("You cannot delete yourself.");
-      try {
-        await users().delete(targetUserId);
-      } catch {}
+      if (targetUserId === userId) throw new Error("You cannot delete yourself.");
+      try { await users().delete(targetUserId); } catch {}
       await db().deleteDocument(DB_ID, COLS.USERS, targetUserId);
       return { success: true };
     }
@@ -263,8 +249,7 @@ async function handleSubmissions(action, payload, userId) {
     case "create": {
       const { items, binId, groupId } = payload;
       const totalPoints = items.reduce(
-        (s, i) => s + (ITEM_POINTS[i.itemType] || 10) * i.quantity,
-        0,
+        (s, i) => s + (ITEM_POINTS[i.itemType] || 10) * i.quantity, 0,
       );
       const bagCode = generateBagCode(userId, items.length, totalPoints);
       return db().createDocument(DB_ID, COLS.SUBMISSIONS, ID.unique(), {
@@ -300,9 +285,7 @@ async function handleSubmissions(action, payload, userId) {
       if (sub.userId === userId && role !== "superadmin") {
         throw new Error("You cannot change the status of your own submission.");
       }
-      await db().updateDocument(DB_ID, COLS.SUBMISSIONS, submissionId, {
-        status: newStatus,
-      });
+      await db().updateDocument(DB_ID, COLS.SUBMISSIONS, submissionId, { status: newStatus });
       const profile = await db().getDocument(DB_ID, COLS.USERS, sub.userId);
       if (newStatus === "verified") {
         await db().updateDocument(DB_ID, COLS.USERS, sub.userId, {
@@ -380,12 +363,7 @@ async function handleRewards(action, payload, userId) {
       });
     case "update":
       await requireAdmin(userId);
-      return db().updateDocument(
-        DB_ID,
-        COLS.REWARDS,
-        payload.rewardId,
-        payload.data,
-      );
+      return db().updateDocument(DB_ID, COLS.REWARDS, payload.rewardId, payload.data);
     case "delete": {
       await requireAdmin(userId);
       const codes = await db().listDocuments(DB_ID, COLS.COUPON_CODES, [
@@ -393,9 +371,7 @@ async function handleRewards(action, payload, userId) {
         Query.limit(500),
       ]);
       await Promise.all(
-        codes.documents.map((c) =>
-          db().deleteDocument(DB_ID, COLS.COUPON_CODES, c.$id),
-        ),
+        codes.documents.map((c) => db().deleteDocument(DB_ID, COLS.COUPON_CODES, c.$id)),
       );
       await db().deleteDocument(DB_ID, COLS.REWARDS, payload.rewardId);
       return { success: true };
@@ -450,9 +426,7 @@ async function handleCoupons(action, payload, userId) {
         }),
       );
       const map = {};
-      counts.forEach(({ id, count }) => {
-        map[id] = count;
-      });
+      counts.forEach(({ id, count }) => { map[id] = count; });
       return map;
     }
     case "deleteCode":
@@ -469,15 +443,13 @@ async function handleRedemptions(action, payload, userId) {
     case "redeem": {
       const { rewardId, pointsCost } = payload;
       const profile = await db().getDocument(DB_ID, COLS.USERS, userId);
-      if (profile.points < pointsCost)
-        throw new Error("Not enough eco-points.");
+      if (profile.points < pointsCost) throw new Error("Not enough eco-points.");
       const avail = await db().listDocuments(DB_ID, COLS.COUPON_CODES, [
         Query.equal("rewardId", rewardId),
         Query.equal("isUsed", false),
         Query.limit(1),
       ]);
-      if (avail.documents.length === 0)
-        throw new Error("No coupon codes left for this reward.");
+      if (avail.documents.length === 0) throw new Error("No coupon codes left for this reward.");
       const codeDoc = avail.documents[0];
       const now = new Date().toISOString();
       await db().updateDocument(DB_ID, COLS.COUPON_CODES, codeDoc.$id, {
@@ -491,22 +463,15 @@ async function handleRedemptions(action, payload, userId) {
         Query.limit(1),
       ]);
       if (remaining.total === 0) {
-        await db().updateDocument(DB_ID, COLS.REWARDS, rewardId, {
-          available: false,
-        });
+        await db().updateDocument(DB_ID, COLS.REWARDS, rewardId, { available: false });
       }
-      const redemption = await db().createDocument(
-        DB_ID,
-        COLS.REDEMPTIONS,
-        ID.unique(),
-        {
-          userId,
-          rewardId,
-          pointsSpent: pointsCost,
-          couponCode: codeDoc.code,
-          redeemedAt: now,
-        },
-      );
+      const redemption = await db().createDocument(DB_ID, COLS.REDEMPTIONS, ID.unique(), {
+        userId,
+        rewardId,
+        pointsSpent: pointsCost,
+        couponCode: codeDoc.code,
+        redeemedAt: now,
+      });
       await db().updateDocument(DB_ID, COLS.USERS, userId, {
         points: profile.points - pointsCost,
       });
@@ -544,9 +509,7 @@ async function handleGroups(action, payload, userId) {
       if (!payload.groupIds?.length) return [];
       const results = await Promise.all(
         payload.groupIds.map((id) =>
-          db()
-            .getDocument(DB_ID, COLS.GROUPS, id)
-            .catch(() => null),
+          db().getDocument(DB_ID, COLS.GROUPS, id).catch(() => null),
         ),
       );
       return results.filter(Boolean);
@@ -559,9 +522,7 @@ async function handleGroups(action, payload, userId) {
     case "leave": {
       const { groupId } = payload;
       const group = await db().getDocument(DB_ID, COLS.GROUPS, groupId);
-      const members = JSON.parse(group.memberIds || "[]").filter(
-        (id) => id !== userId,
-      );
+      const members = JSON.parse(group.memberIds || "[]").filter((id) => id !== userId);
       await db().updateDocument(DB_ID, COLS.GROUPS, groupId, {
         memberIds: JSON.stringify(members),
       });
@@ -575,9 +536,7 @@ async function handleGroups(action, payload, userId) {
           Query.equal("status", "pending"),
         ]);
         await Promise.all(
-          pending.documents.map((i) =>
-            db().deleteDocument(DB_ID, COLS.INVITES, i.$id),
-          ),
+          pending.documents.map((i) => db().deleteDocument(DB_ID, COLS.INVITES, i.$id)),
         );
         await db().deleteDocument(DB_ID, COLS.GROUPS, groupId);
       }
@@ -590,8 +549,7 @@ async function handleGroups(action, payload, userId) {
         Query.equal("groupId", groupId),
         Query.equal("status", "pending"),
       ]);
-      if (existing.documents.length > 0)
-        throw new Error("Invite already sent to this email.");
+      if (existing.documents.length > 0) throw new Error("Invite already sent to this email.");
       const group = await db().getDocument(DB_ID, COLS.GROUPS, groupId);
       return db().createDocument(DB_ID, COLS.INVITES, ID.unique(), {
         groupId,
@@ -624,27 +582,22 @@ async function handleGroups(action, payload, userId) {
           groupIds: [...groupIds, groupId],
         });
       }
-      await db().updateDocument(DB_ID, COLS.INVITES, inviteId, {
-        status: "accepted",
-      });
+      await db().updateDocument(DB_ID, COLS.INVITES, inviteId, { status: "accepted" });
       return { success: true };
     }
     case "declineInvite":
-      await db().updateDocument(DB_ID, COLS.INVITES, payload.inviteId, {
-        status: "declined",
-      });
+      await db().updateDocument(DB_ID, COLS.INVITES, payload.inviteId, { status: "declined" });
       return { success: true };
     default:
       throw new Error(`Unknown action: groups.${action}`);
   }
 }
 
-// Actions that don't require an authenticated session
 const GUEST_ACTIONS = new Set([
-  "users:resolveUser", // FIX: was missing — called before login
+  "users:resolveUser",
   "users:getUserByEmail",
   "users:createProfile",
-  "rewards:getAvailable", // public — shown on dashboard before auth check completes
+  "rewards:getAvailable",
 ]);
 
 export default async ({ req, res, log, error }) => {
@@ -653,24 +606,15 @@ export default async ({ req, res, log, error }) => {
     try {
       body =
         typeof req.body === "string"
-          ? req.body.trim()
-            ? JSON.parse(req.body)
-            : {}
+          ? req.body.trim() ? JSON.parse(req.body) : {}
           : (req.body ?? {});
     } catch (e) {
-      return res.json(
-        { success: false, error: "Invalid request body: " + e.message },
-        400,
-      );
+      return res.json({ success: false, error: "Invalid request body: " + e.message }, 400);
     }
 
     const { domain, action, payload = {}, jwt: bodyJwt } = body;
-
     if (!domain || !action) {
-      return res.json(
-        { success: false, error: "Missing domain or action." },
-        400,
-      );
+      return res.json({ success: false, error: "Missing domain or action." }, 400);
     }
 
     const key = `${domain}:${action}`;
@@ -682,10 +626,7 @@ export default async ({ req, res, log, error }) => {
       try {
         userId = await getUserId(req, bodyJwt);
       } catch (e) {
-        return res.json(
-          { success: false, error: "UNAUTHORIZED: No session." },
-          401,
-        );
+        return res.json({ success: false, error: "UNAUTHORIZED: No session." }, 401);
       }
     }
 
@@ -693,29 +634,14 @@ export default async ({ req, res, log, error }) => {
 
     let result;
     switch (domain) {
-      case "users":
-        result = await handleUsers(action, payload, userId);
-        break;
-      case "submissions":
-        result = await handleSubmissions(action, payload, userId);
-        break;
-      case "rewards":
-        result = await handleRewards(action, payload, userId);
-        break;
-      case "coupons":
-        result = await handleCoupons(action, payload, userId);
-        break;
-      case "redemptions":
-        result = await handleRedemptions(action, payload, userId);
-        break;
-      case "groups":
-        result = await handleGroups(action, payload, userId);
-        break;
+      case "users":       result = await handleUsers(action, payload, userId);       break;
+      case "submissions": result = await handleSubmissions(action, payload, userId); break;
+      case "rewards":     result = await handleRewards(action, payload, userId);     break;
+      case "coupons":     result = await handleCoupons(action, payload, userId);     break;
+      case "redemptions": result = await handleRedemptions(action, payload, userId); break;
+      case "groups":      result = await handleGroups(action, payload, userId);      break;
       default:
-        return res.json(
-          { success: false, error: `Unknown domain: ${domain}` },
-          400,
-        );
+        return res.json({ success: false, error: `Unknown domain: ${domain}` }, 400);
     }
 
     return res.json({ success: true, data: result });

@@ -17,9 +17,6 @@ export const ITEM_POINTS = {
 
 // ── CORE CALLER ───────────────────────────────────────────
 async function _execute(domain, action, payload = {}) {
-  // Get a JWT if a session exists. Retry a few times to handle
-  // the post-login propagation window. If no session (pre-auth
-  // calls), proceed without one — server handles it as guest.
   let jwt = null;
   for (let i = 0; i < 3; i++) {
     try {
@@ -31,11 +28,6 @@ async function _execute(domain, action, payload = {}) {
     }
   }
 
-  // Pass the JWT inside the request body instead of as an SDK
-  // header argument. The createExecution headers parameter has
-  // inconsistent behavior across Appwrite SDK versions and causes
-  // 500 errors on some versions. The server function reads
-  // bodyJwt from req.body.jwt as a fallback (already supported).
   const body = JSON.stringify({
     domain,
     action,
