@@ -1,6 +1,5 @@
 import { Client, Databases, Users, Teams, Account, ID, Query } from 'node-appwrite';
 
-// ── ENV ───────────────────────────────────────────────────
 const ENDPOINT        = process.env.APPWRITE_ENDPOINT;
 const PROJECT_ID      = process.env.APPWRITE_PROJECT_ID;
 const API_KEY         = process.env.APPWRITE_API_KEY;
@@ -31,7 +30,6 @@ const ITEM_POINTS = {
   'Other':            10,
 };
 
-// ── CLIENTS ───────────────────────────────────────────────
 function serverClient() {
   return new Client()
     .setEndpoint(ENDPOINT)
@@ -50,17 +48,13 @@ const db    = () => new Databases(serverClient());
 const teams = () => new Teams(serverClient());
 const users = () => new Users(serverClient());
 
-// ── AUTH HELPERS ──────────────────────────────────────────
-// Priority order:
-// 1. x-appwrite-user-id injected by Appwrite when called with cookie session
-// 2. JWT passed in request body (our fallback for localhost/cross-origin)
-// 3. x-appwrite-user-jwt header (kept for compatibility)
 async function getUserId(req, bodyJwt) {
+  // 1. Appwrite-injected userId (cookie session via browser)
   const injectedId = req.headers['x-appwrite-user-id'];
-  if (injectedId && injectedId.trim()) {
-    return injectedId.trim();
-  }
+  if (injectedId && injectedId.trim()) return injectedId.trim();
 
+  // 2. JWT from request body (our primary method — avoids SDK header issues)
+  // 3. JWT from header (legacy fallback)
   const jwt = bodyJwt || req.headers['x-appwrite-user-jwt'];
   if (jwt && jwt.trim()) {
     const client  = userClient(jwt.trim());
@@ -112,7 +106,6 @@ async function syncTeams(userId, newRole) {
   }
 }
 
-// ── BAG CODE ──────────────────────────────────────────────
 function generateBagCode(userId, itemCount, totalPoints) {
   const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const seed  = `${userId}-${itemCount}-${totalPoints}-${Date.now()}`;
@@ -130,9 +123,21 @@ function generateBagCode(userId, itemCount, totalPoints) {
   return `ECHO-${code}`;
 }
 
-// ── DOMAIN HANDLERS ───────────────────────────────────────
 async function handleUsers(action, payload, userId) {
   switch (action) {
+    case 'resolveUser': {
+      // FIX: was missing from GUEST_ACTIONS — any pre-auth lookup by email.
+      // Try to find existing user by email; if not found, return a new unique ID.
+      // This is called before magic link is sent so must work without a session.
+      const { email } = payload;
+      const existing = await db().listDocuments(DB_ID, COLS.USERS, [
+        Query.equal('email', email), Query.limit(1),
+      ]);
+      if (existing.documents.length > 0) {
+        return { userId: existing.documents[0].$id };
+      }
+      return { userId: ID.unique() };
+    }
     case 'createProfile': {
       const { name, email, userId: explicitId } = payload;
       const docId = explicitId || userId;
@@ -149,8 +154,24 @@ async function handleUsers(action, payload, userId) {
       return db().getDocument(DB_ID, COLS.USERS, userId);
     case 'updateProfile':
       return db().updateDocument(DB_ID, COLS.USERS, userId, { name: payload.name });
-    case 'setVerified':
-      return db().updateDocument(DB_ID, COLS.USERS, userId, { isVerified: true });
+    case 'setVerified': {
+      // If user doc doesn't exist yet (first login), create it now.
+      try {
+        return await db().updateDocument(DB_ID, COLS.USERS, userId, { isVerified: true });
+      } catch (e) {
+        if (e.code === 404) {
+          // Get email from Appwrite auth
+          const u = await users().get(userId);
+          return db().createDocument(DB_ID, COLS.USERS, userId, {
+            userId, name: u.name || u.email.split('@')[0], email: u.email,
+            points: 0, totalDeposits: 0,
+            isVerified: true, role: 'user',
+            createdAt: new Date().toISOString(),
+          });
+        }
+        throw e;
+      }
+    }
     case 'getAllUsers': {
       await requireAdmin(userId);
       return db().listDocuments(DB_ID, COLS.USERS, [
@@ -486,13 +507,14 @@ async function handleGroups(action, payload, userId) {
   }
 }
 
-// ── GUEST ACTIONS ─────────────────────────────────────────
+// Actions that don't require an authenticated session
 const GUEST_ACTIONS = new Set([
+  'users:resolveUser',    // FIX: was missing — called before login
   'users:getUserByEmail',
   'users:createProfile',
+  'rewards:getAvailable', // public — shown on dashboard before auth check completes
 ]);
 
-// ── ENTRY POINT ───────────────────────────────────────────
 export default async ({ req, res, log, error }) => {
   try {
     let body;
@@ -537,7 +559,6 @@ export default async ({ req, res, log, error }) => {
     }
 
     return res.json({ success: true, data: result });
-
   } catch (err) {
     error(`[fn-echo] ERROR: ${err.message}`);
     const status = err.message?.startsWith('UNAUTHORIZED') ? 403 : 500;

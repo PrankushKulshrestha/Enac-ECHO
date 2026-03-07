@@ -17,28 +17,36 @@ export const ITEM_POINTS = {
 
 // ── CORE CALLER ───────────────────────────────────────────
 async function _execute(domain, action, payload = {}) {
-  const body = JSON.stringify({ domain, action, payload });
-
-  // Try to get a JWT, retrying a few times to handle the window right after
-  // login where the session exists (account.get() works) but the JWT endpoint
-  // hasn't fully propagated yet. We cap at 3 fast retries (300ms apart) so
-  // pre-auth calls (no session at all) still fail quickly and quietly.
-  let headers = {};
+  // Get a JWT if a session exists. Retry a few times to handle
+  // the post-login propagation window. If no session (pre-auth
+  // calls), proceed without one — server handles it as guest.
+  let jwt = null;
   for (let i = 0; i < 3; i++) {
     try {
       const j = await account.createJWT();
-      headers = { 'x-appwrite-user-jwt': j.jwt };
+      jwt = j.jwt;
       break;
     } catch {
       if (i < 2) await new Promise(r => setTimeout(r, 300));
-      // On final failure: proceed without JWT (pre-auth calls like resolveUser)
     }
   }
+
+  // Pass the JWT inside the request body instead of as an SDK
+  // header argument. The createExecution headers parameter has
+  // inconsistent behavior across Appwrite SDK versions and causes
+  // 500 errors on some versions. The server function reads
+  // bodyJwt from req.body.jwt as a fallback (already supported).
+  const body = JSON.stringify({
+    domain,
+    action,
+    payload,
+    ...(jwt ? { jwt } : {}),
+  });
 
   let execution;
   try {
     execution = await functions.createExecution(
-      FN_ID, body, false, '/', 'POST', headers,
+      FN_ID, body, false, '/', 'POST',
     );
   } catch (e) {
     throw new Error('Could not reach server function: ' + e.message);
