@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   Shield, Users, Recycle, Gift, Check, X,
   Leaf, TrendingUp, Package, Trash2, AlertTriangle,
-  KeyRound, Plus, ChevronDown, ChevronUp, Tag, Hash,
+  KeyRound, Plus, ChevronDown, ChevronUp, Tag, Hash, ShieldCheck, ShieldOff,
 } from 'lucide-react';
 import { useAuth } from '../lib/useAuth';
 import {
@@ -11,6 +11,7 @@ import {
   addCouponCodesToReward, getCouponCodesForReward,
   getAvailableCodeCounts, deleteCouponCode,
   deleteSubmission, updateSubmissionStatus,
+  promoteToAdmin, demoteToUser,
 } from '../lib/db';
 
 const statusStyle = {
@@ -391,6 +392,7 @@ export default function AdminPage() {
   const [addCodesReward, setAddCodesReward] = useState(null);
   const [expandedReward, setExpandedReward] = useState(null);
   const [showRewardForm, setShowRewardForm] = useState(false);
+  const [roleActionId, setRoleActionId]     = useState(null);
 
   useEffect(() => { loadAll(); }, []);
 
@@ -444,6 +446,23 @@ export default function AdminPage() {
       await deleteSubmission(sub.$id);
       setSubmissions(prev => prev.filter(s => s.$id !== sub.$id));
     } catch (e) { setError(e.message); }
+  }
+
+  async function handleToggleAdmin(u) {
+    const isAdmin = u.role === 'admin';
+    const action  = isAdmin ? 'Remove admin from' : 'Make admin';
+    if (!confirm(`${action} ${u.name || u.email}?`)) return;
+    setRoleActionId(u.$id);
+    try {
+      if (isAdmin) {
+        await demoteToUser(u.$id);
+        setUsers(prev => prev.map(x => x.$id === u.$id ? { ...x, role: 'user' } : x));
+      } else {
+        await promoteToAdmin(u.$id);
+        setUsers(prev => prev.map(x => x.$id === u.$id ? { ...x, role: 'admin' } : x));
+      }
+    } catch (e) { setError(e.message); }
+    finally { setRoleActionId(null); }
   }
 
   async function handleToggleReward(reward) {
@@ -627,22 +646,52 @@ export default function AdminPage() {
                   <p className="font-body text-bark/45 text-sm text-center py-10">No users yet.</p>
                 ) : (
                   <div className="space-y-0">
-                    {users.map(u => (
-                      <div key={u.$id} className="flex items-center justify-between py-4 border-b border-eco-50 last:border-0 gap-3">
-                        <div className="flex-1 min-w-0">
-                          <p className="font-display font-semibold text-sm text-moss">{u.name}</p>
-                          <p className="font-mono text-xs text-bark/40">{u.email}</p>
+                    {users.map(u => {
+                      const isSelf       = u.$id === profile?.$id || u.email === profile?.email;
+                      const isSuperAdmin = u.role === 'superadmin';
+                      const isAdmin      = u.role === 'admin';
+                      const canToggle    = profile?.role === 'superadmin' && !isSelf && !isSuperAdmin;
+                      return (
+                        <div key={u.$id} className="flex items-center justify-between py-4 border-b border-eco-50 last:border-0 gap-3 flex-wrap">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-display font-semibold text-sm text-moss">{u.name}</p>
+                            <p className="font-mono text-xs text-bark/40">{u.email}</p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                            <span className="font-mono text-xs font-bold text-eco-600 bg-eco-50 px-2.5 py-1 rounded-full">{u.points} pts</span>
+                            {isSuperAdmin && <span className="font-mono text-xs bg-moss text-cream px-2.5 py-1 rounded-full">superadmin</span>}
+                            {isAdmin      && <span className="font-mono text-xs bg-moss/10 text-moss px-2.5 py-1 rounded-full">admin</span>}
+                            {u.isVerified
+                              ? <span className="font-mono text-xs bg-eco-100 text-eco-700 px-2.5 py-1 rounded-full">verified</span>
+                              : <span className="font-mono text-xs bg-yellow-50 text-yellow-700 px-2.5 py-1 rounded-full">unverified</span>
+                            }
+                            {canToggle && (
+                              <button
+                                onClick={() => handleToggleAdmin(u)}
+                                disabled={roleActionId === u.$id}
+                                title={isAdmin ? 'Remove admin role' : 'Make admin'}
+                                className={`flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
+                                  isAdmin
+                                    ? 'bg-red-50 text-red-500 hover:bg-red-100'
+                                    : 'bg-eco-50 text-moss hover:bg-eco-100'
+                                }`}
+                              >
+                                {roleActionId === u.$id ? (
+                                  <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                  </svg>
+                                ) : isAdmin ? (
+                                  <><ShieldOff className="w-3 h-3" />Remove admin</>
+                                ) : (
+                                  <><ShieldCheck className="w-3 h-3" />Make admin</>
+                                )}
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="font-mono text-xs font-bold text-eco-600 bg-eco-50 px-2.5 py-1 rounded-full">{u.points} pts</span>
-                          {u.isAdmin && <span className="font-mono text-xs bg-moss/10 text-moss px-2.5 py-1 rounded-full">admin</span>}
-                          {u.isVerified
-                            ? <span className="font-mono text-xs bg-eco-100 text-eco-700 px-2.5 py-1 rounded-full">verified</span>
-                            : <span className="font-mono text-xs bg-yellow-50 text-yellow-700 px-2.5 py-1 rounded-full">unverified</span>
-                          }
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
