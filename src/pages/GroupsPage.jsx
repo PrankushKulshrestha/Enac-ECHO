@@ -40,13 +40,15 @@ export default function GroupsPage() {
     loadAll();
   }, [profile]);
 
-  const currentGroupId = profile?.groupId?.trim() || "";
+  const currentGroupId =
+    typeof profile?.groupIds === "string" ? profile.groupIds.trim() : "";
   const alreadyInGroup = !!currentGroupId;
 
-  async function loadAll() {
+  async function loadAll(overrideGroupId) {
     setLoading(true);
     try {
-      const groupIds = currentGroupId ? [currentGroupId] : [];
+      const gId = overrideGroupId !== undefined ? overrideGroupId : currentGroupId;
+      const groupIds = gId ? [gId] : [];
       const [fetchedGroups, lb, inv] = await Promise.all([
         getGroups(groupIds),
         getGroupLeaderboard(),
@@ -93,9 +95,9 @@ export default function GroupsPage() {
     setCreating(true);
 
     try {
-      await createGroup(trimmedName, user.$id);
+      const newGroup = await createGroup(trimmedName, user.$id);
       await refreshProfile();
-      await loadAll();
+      await loadAll(newGroup.$id);
       setGroupName("");
       setShowCreate(false);
     } catch (e) {
@@ -141,7 +143,7 @@ export default function GroupsPage() {
       await acceptInvite(invite.$id, user.$id, invite.groupId);
       setInvites((inv) => inv.filter((i) => i.$id !== invite.$id));
       await refreshProfile();
-      await loadAll();
+      await loadAll(invite.groupId);
     } catch (e) {
       setError(e.message);
     }
@@ -162,7 +164,7 @@ export default function GroupsPage() {
     try {
       await leaveGroup(user.$id, groupId);
       await refreshProfile();
-      await loadAll();
+      await loadAll('');
       setShowCreate(false);
     } catch (e) {
       setError(e.message);
