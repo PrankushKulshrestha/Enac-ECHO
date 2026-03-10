@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Shield, Users, Recycle, Gift, Check, X,
   Leaf, TrendingUp, Package, Trash2, AlertTriangle,
-  KeyRound, Plus, ChevronDown, ChevronUp, Tag, Hash,
+  KeyRound, Plus, ChevronDown, ChevronUp, Tag, Hash, ShieldCheck, ShieldOff,
+  Upload, Image,
 } from 'lucide-react';
 import { useAuth } from '../lib/useAuth';
 import {
@@ -11,6 +12,7 @@ import {
   addCouponCodesToReward, getCouponCodesForReward,
   getAvailableCodeCounts, deleteCouponCode,
   deleteSubmission, updateSubmissionStatus,
+  promoteToAdmin, demoteToUser,
 } from '../lib/db';
 
 const statusStyle = {
@@ -19,27 +21,101 @@ const statusStyle = {
   rejected: 'bg-red-50 text-red-600',
 };
 
+// ── LOGO UPLOAD INPUT ─────────────────────────────────────
+function LogoUpload({ value, onChange }) {
+  const inputRef = useRef(null);
+  const [dragOver, setDragOver] = useState(false);
+  function processFile(file) {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) return;
+    const img = new window.Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const MAX = 120;
+      const scale = Math.min(MAX / img.width, MAX / img.height, 1);
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      const b64 = canvas.toDataURL('image/webp', 0.85);
+      URL.revokeObjectURL(url);
+      onChange(b64);
+    };
+    img.src = url;
+  }
+  function handleFile(e) { processFile(e.target.files?.[0]); }
+  function handleDrop(e) {
+    e.preventDefault(); setDragOver(false);
+    processFile(e.dataTransfer.files?.[0]);
+  }
+  const isBase64 = value?.startsWith('data:');
+  const isUrl    = value && !isBase64;
+  return (
+    <div>
+      <label className="font-display font-medium text-xs text-bark/60 mb-1.5 block">
+        Brand Logo <span className="font-body font-normal text-bark/35">(upload image or paste URL)</span>
+      </label>
+      <div className="flex gap-3 items-start">
+        <div className="w-16 h-16 rounded-xl border-2 border-eco-100 bg-cream/50 flex items-center justify-center shrink-0 overflow-hidden">
+          {value ? (
+            <img src={value} alt="Logo preview" className="w-full h-full object-contain"
+              onError={e => e.target.style.display = 'none'} />
+          ) : (
+            <Image className="w-6 h-6 text-bark/20" strokeWidth={1.5} />
+          )}
+        </div>
+        <div className="flex-1 space-y-2">
+          <div
+            onClick={() => inputRef.current?.click()}
+            onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}
+            className={`w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed rounded-xl cursor-pointer transition-colors text-xs font-body ${
+              dragOver ? 'border-moss bg-eco-50 text-moss' : 'border-eco-100 text-bark/40 hover:border-moss/50 hover:text-moss/70'
+            }`}
+          >
+            <Upload className="w-3.5 h-3.5 shrink-0" />
+            {isBase64 ? 'Replace image' : 'Upload image'}
+          </div>
+          <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+          <input
+            type="text"
+            value={isUrl ? value : ''}
+            onChange={e => onChange(e.target.value)}
+            placeholder="…or paste image URL"
+            className="w-full px-3 py-2 border-2 border-eco-100 rounded-xl font-body text-xs text-bark focus:outline-none focus:border-moss transition-colors bg-cream/50"
+          />
+          {value && (
+            <button type="button" onClick={() => onChange('')}
+              className="font-body text-xs text-red-400 hover:text-red-600 transition-colors">
+              Remove logo
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── VERIFY DIALOG ─────────────────────────────────────────
 function VerifyDialog({ submission, onApprove, onReject, onClose, isOwn }) {
   const [inputCode, setInputCode] = useState('');
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState('');
-
   const storedCode  = submission.bagCode || '';
   const codeMatches = inputCode.trim().toUpperCase() === storedCode.toUpperCase();
   const items       = (() => { try { return JSON.parse(submission.items); } catch { return []; } })();
-
   async function handleApprove() {
     if (!codeMatches || isOwn) return;
     setLoading(true); setError('');
     try { await onApprove(submission); } catch (e) { setError(e.message); } finally { setLoading(false); }
   }
-
   async function handleReject() {
     setLoading(true); setError('');
     try { await onReject(submission); } catch (e) { setError(e.message); } finally { setLoading(false); }
   }
-
   return (
     <div className="fixed inset-0 bg-bark/40 backdrop-blur-sm flex items-center justify-center z-50 px-4">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-8">
@@ -54,7 +130,6 @@ function VerifyDialog({ submission, onApprove, onReject, onClose, isOwn }) {
             <X className="w-4 h-4 text-bark/50" />
           </button>
         </div>
-
         <div className="bg-eco-50 rounded-2xl p-4 mb-5">
           <div className="flex flex-wrap gap-1 mb-1">
             {items.map((item, i) => (
@@ -67,7 +142,6 @@ function VerifyDialog({ submission, onApprove, onReject, onClose, isOwn }) {
             {submission.totalPoints} pts · {new Date(submission.submittedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
           </p>
         </div>
-
         {isOwn ? (
           <div className="flex items-center gap-2 bg-yellow-50 border border-yellow-100 text-yellow-700 rounded-2xl p-3 mb-5">
             <AlertTriangle className="w-4 h-4 shrink-0" />
@@ -77,14 +151,10 @@ function VerifyDialog({ submission, onApprove, onReject, onClose, isOwn }) {
           <>
             <p className="font-body text-sm text-bark/60 mb-3">Enter the code written on the physical bag:</p>
             <input
-              type="text"
-              value={inputCode}
-              onChange={e => setInputCode(e.target.value)}
+              type="text" value={inputCode} onChange={e => setInputCode(e.target.value)}
               placeholder="ECHO-XXXX-XXXX-XXXX-XXXX"
               className={`w-full px-4 py-3 border-2 rounded-2xl font-mono text-sm focus:outline-none transition-colors mb-2 ${
-                inputCode === ''   ? 'border-eco-100 bg-cream/50'
-                : codeMatches     ? 'border-eco-400 bg-eco-50 text-eco-700'
-                :                   'border-red-200 bg-red-50 text-red-700'
+                inputCode === '' ? 'border-eco-100 bg-cream/50' : codeMatches ? 'border-eco-400 bg-eco-50 text-eco-700' : 'border-red-200 bg-red-50 text-red-700'
               }`}
             />
             {inputCode !== '' && (
@@ -94,9 +164,7 @@ function VerifyDialog({ submission, onApprove, onReject, onClose, isOwn }) {
             )}
           </>
         )}
-
         {error && <div className="bg-red-50 border border-red-100 text-red-700 rounded-xl p-3 mb-4 font-body text-xs">{error}</div>}
-
         <div className="flex gap-3">
           <button onClick={handleReject} disabled={loading}
             className="flex-1 flex items-center justify-center gap-2 bg-red-50 text-red-600 font-display font-semibold text-sm py-3 rounded-2xl hover:bg-red-100 transition-colors disabled:opacity-50">
@@ -117,9 +185,34 @@ function AddCodesDialog({ reward, onSave, onClose }) {
   const [raw, setRaw]         = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
+  const [csvFile, setCsvFile] = useState(null);
+  const csvInputRef           = useRef(null);
 
-  const parsed  = raw.split(',').map(c => c.trim()).filter(c => c !== '');
+  function parseRaw(text) {
+    return text.split(/[\n,]+/).map(c => c.trim()).filter(c => c !== '');
+  }
+  const parsed  = parseRaw(raw);
   const preview = parsed.slice(0, 3);
+
+  function handleCsvFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCsvFile(file.name);
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const text  = ev.target.result || '';
+      const cells = text
+        .split(/[\n\r]+/)
+        .flatMap(line => line.split(','))
+        .map(c => c.trim().replace(/^["']|["']$/g, ''))
+        .filter(c => c !== '');
+      const codes = /\d/.test(cells[0]) || cells[0] === cells[0].toUpperCase()
+        ? cells : cells.slice(1);
+      setRaw(codes.join(', '));
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
 
   async function handleSave() {
     if (parsed.length === 0) { setError('Enter at least one code.'); return; }
@@ -141,14 +234,23 @@ function AddCodesDialog({ reward, onSave, onClose }) {
         <p className="font-body text-sm text-bark/55 mb-5">
           Adding to: <span className="font-semibold text-moss">{reward.brandName} — {reward.title}</span>
         </p>
+        <input ref={csvInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleCsvFile} />
+        <button type="button" onClick={() => csvInputRef.current?.click()}
+          className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-eco-200 rounded-2xl font-body text-sm text-moss hover:border-moss hover:bg-eco-50 transition-colors mb-4">
+          <Upload className="w-4 h-4 shrink-0" />
+          {csvFile ? `Loaded: ${csvFile}` : 'Upload CSV file'}
+        </button>
+        <div className="flex items-center gap-3 mb-3">
+          <div className="flex-1 h-px bg-eco-100" />
+          <span className="font-mono text-xs text-bark/35">or paste manually</span>
+          <div className="flex-1 h-px bg-eco-100" />
+        </div>
         <label className="font-display font-medium text-sm text-bark/70 mb-2 block">
-          Paste codes <span className="font-body font-normal text-bark/40">(comma separated)</span>
+          Codes <span className="font-body font-normal text-bark/40">(comma or newline separated)</span>
         </label>
         <textarea
-          value={raw}
-          onChange={e => setRaw(e.target.value)}
-          placeholder="CODE1, CODE2, CODE3, ..."
-          rows={4}
+          value={raw} onChange={e => { setRaw(e.target.value); setCsvFile(null); }}
+          placeholder="CODE1, CODE2, CODE3, ..." rows={4}
           className="w-full px-4 py-3 border-2 border-eco-100 rounded-2xl font-mono text-sm text-bark focus:outline-none focus:border-moss transition-colors bg-cream/50 resize-none mb-3"
         />
         {parsed.length > 0 && (
@@ -172,12 +274,10 @@ function AddCodesDialog({ reward, onSave, onClose }) {
 
 // ── CODES PANEL (inline per reward in list) ───────────────
 function CodesPanel({ reward, onCodesChanged }) {
-  const [codes, setCodes]         = useState([]);
-  const [loading, setLoading]     = useState(true);
+  const [codes, setCodes]           = useState([]);
+  const [loading, setLoading]       = useState(true);
   const [deletingId, setDeletingId] = useState(null);
-
   useEffect(() => { fetchCodes(); }, [reward.$id]);
-
   async function fetchCodes() {
     setLoading(true);
     try {
@@ -186,7 +286,6 @@ function CodesPanel({ reward, onCodesChanged }) {
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }
-
   async function handleDelete(codeDoc) {
     if (codeDoc.isUsed) return;
     if (!confirm(`Delete code "${codeDoc.code}"?`)) return;
@@ -198,20 +297,16 @@ function CodesPanel({ reward, onCodesChanged }) {
     } catch (e) { console.error(e); }
     finally { setDeletingId(null); }
   }
-
   const unused = codes.filter(c => !c.isUsed);
   const used   = codes.filter(c => c.isUsed);
-
   if (loading) return (
     <div className="mt-3 space-y-2">{[1,2,3].map(i => <div key={i} className="h-8 bg-eco-50 rounded-xl animate-pulse" />)}</div>
   );
-
   if (codes.length === 0) return (
     <div className="mt-3 bg-eco-50 rounded-2xl p-4 text-center">
       <p className="font-body text-xs text-bark/45">No codes yet.</p>
     </div>
   );
-
   return (
     <div className="mt-3 space-y-1.5">
       <div className="flex gap-3 mb-3">
@@ -242,18 +337,40 @@ const EMPTY_FORM = {
   title: '', brandName: '', partner: '', logoUrl: '',
   description: '', pointsCost: 100, couponCodesRaw: '',
 };
-
 function AddRewardForm({ onCreated, onCancel }) {
   const [form, setForm]       = useState(EMPTY_FORM);
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState('');
+  const [csvFile, setCsvFile] = useState(null);
+  const csvInputRef           = useRef(null);
 
-  // Auto-compute quantity from raw codes input
-  const parsedCodes = form.couponCodesRaw
-    .split(',').map(c => c.trim()).filter(c => c !== '');
-  const quantity = parsedCodes.length;
+  function parseRaw(text) {
+    return text.split(/[\n,]+/).map(c => c.trim()).filter(c => c !== '');
+  }
+  const parsedCodes = parseRaw(form.couponCodesRaw);
+  const quantity    = parsedCodes.length;
 
   function set(key, val) { setForm(f => ({ ...f, [key]: val })); }
+
+  function handleCsvFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCsvFile(file.name);
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const text  = ev.target.result || '';
+      const cells = text
+        .split(/[\n\r]+/)
+        .flatMap(line => line.split(','))
+        .map(c => c.trim().replace(/^["']|["']$/g, ''))
+        .filter(c => c !== '');
+      const codes = /\d/.test(cells[0]) || cells[0] === cells[0].toUpperCase()
+        ? cells : cells.slice(1);
+      set('couponCodesRaw', codes.join(', '));
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -272,18 +389,15 @@ function AddRewardForm({ onCreated, onCancel }) {
     }
   }
 
-  // Field config for the text inputs
-  const fields = [
+  const textFields = [
     { key: 'title',       label: 'Voucher Name',  placeholder: '10% off on Starbucks',  span: 2 },
     { key: 'brandName',   label: 'Brand Name',    placeholder: 'Starbucks',              span: 1 },
     { key: 'partner',     label: 'Partner',       placeholder: 'Starbucks India',        span: 1 },
-    { key: 'logoUrl',     label: 'Logo URL',      placeholder: 'https://...',            span: 2 },
     { key: 'description', label: 'Description',   placeholder: 'Get 10% off (up to ₹100) on your next Starbucks order', span: 2 },
   ];
 
   return (
     <div className="bg-white rounded-3xl border border-eco-100 p-7">
-      {/* Heading */}
       <div className="flex items-center gap-3 mb-7">
         <div className="w-10 h-10 bg-eco-100 rounded-xl flex items-center justify-center">
           <Gift className="w-5 h-5 text-moss" strokeWidth={1.5} />
@@ -293,45 +407,38 @@ function AddRewardForm({ onCreated, onCancel }) {
           <p className="font-body text-xs text-bark/45 mt-0.5">Fill in all details and paste the coupon codes from the brand.</p>
         </div>
       </div>
-
       {error && (
         <div className="flex items-center gap-2 bg-red-50 border border-red-100 text-red-700 rounded-2xl p-3 mb-5 font-body text-sm">
           <AlertTriangle className="w-4 h-4 shrink-0" />{error}
         </div>
       )}
-
       <form onSubmit={handleSubmit}>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-          {fields.map(({ key, label, placeholder, span }) => (
+          {textFields.map(({ key, label, placeholder, span }) => (
             <div key={key} className={span === 2 ? 'sm:col-span-2' : ''}>
               <label className="font-display font-medium text-xs text-bark/60 mb-1.5 block">{label}</label>
               <input
-                type="text"
-                value={form[key]}
-                onChange={e => set(key, e.target.value)}
+                type="text" value={form[key]} onChange={e => set(key, e.target.value)}
                 placeholder={placeholder}
                 className="w-full px-4 py-2.5 border-2 border-eco-100 rounded-xl font-body text-sm text-bark focus:outline-none focus:border-moss transition-colors bg-cream/50"
               />
             </div>
           ))}
-
-          {/* Points Cost */}
+          {/* Logo upload — full width */}
+          <div className="sm:col-span-2">
+            <LogoUpload value={form.logoUrl} onChange={val => set('logoUrl', val)} />
+          </div>
           <div>
             <label className="font-display font-medium text-xs text-bark/60 mb-1.5 block">Points Cost Per Coupon</label>
             <input
-              type="number"
-              min="1"
-              value={form.pointsCost}
+              type="number" min="1" value={form.pointsCost}
               onChange={e => set('pointsCost', Number(e.target.value))}
               className="w-full px-4 py-2.5 border-2 border-eco-100 rounded-xl font-body text-sm text-bark focus:outline-none focus:border-moss transition-colors bg-cream/50"
             />
           </div>
-
-          {/* Quantity — read only, auto-calculated */}
           <div>
             <label className="font-display font-medium text-xs text-bark/60 mb-1.5 flex items-center gap-1.5">
-              Quantity
-              <span className="font-body font-normal text-bark/35">(auto)</span>
+              Quantity <span className="font-body font-normal text-bark/35">(auto)</span>
             </label>
             <div className={`w-full px-4 py-2.5 border-2 rounded-xl font-mono text-sm flex items-center gap-2 transition-colors ${
               quantity > 0 ? 'border-eco-300 bg-eco-50 text-eco-700' : 'border-eco-100 bg-cream/30 text-bark/35'
@@ -340,21 +447,27 @@ function AddRewardForm({ onCreated, onCancel }) {
               {quantity > 0 ? `${quantity} coupon${quantity !== 1 ? 's' : ''}` : 'Paste codes below'}
             </div>
           </div>
-
           {/* Coupon Codes — full width */}
           <div className="sm:col-span-2">
-            <label className="font-display font-medium text-xs text-bark/60 mb-1.5 block">
-              Coupon Codes
-              <span className="font-body font-normal text-bark/35 ml-1.5">comma separated</span>
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="font-display font-medium text-xs text-bark/60">
+                Coupon Codes
+                <span className="font-body font-normal text-bark/35 ml-1.5">comma or newline separated</span>
+              </label>
+              <input ref={csvInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleCsvFile} />
+              <button type="button" onClick={() => csvInputRef.current?.click()}
+                className="flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-xl bg-eco-50 text-moss hover:bg-eco-100 transition-colors border border-eco-200">
+                <Upload className="w-3 h-3 shrink-0" />
+                {csvFile ? csvFile : 'Upload CSV'}
+              </button>
+            </div>
             <textarea
               value={form.couponCodesRaw}
-              onChange={e => set('couponCodesRaw', e.target.value)}
+              onChange={e => { set('couponCodesRaw', e.target.value); setCsvFile(null); }}
               placeholder="ZOM10A, ZOM10B, ZOM10C, ZOM10D, ..."
               rows={3}
               className="w-full px-4 py-3 border-2 border-eco-100 rounded-xl font-mono text-sm text-bark focus:outline-none focus:border-moss transition-colors bg-cream/50 resize-none"
             />
-            {/* Live preview of parsed codes */}
             {quantity > 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {parsedCodes.slice(0, 6).map((c, i) => (
@@ -367,8 +480,6 @@ function AddRewardForm({ onCreated, onCancel }) {
             )}
           </div>
         </div>
-
-        {/* Actions */}
         <div className="flex gap-3 pt-2 border-t border-eco-50">
           <button type="button" onClick={onCancel}
             className="flex-1 sm:flex-none px-6 bg-eco-50 text-moss font-display font-semibold text-sm py-3 rounded-2xl hover:bg-eco-100 transition-colors">
@@ -394,11 +505,11 @@ export default function AdminPage() {
   const [codeCounts, setCodeCounts]   = useState({});
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState('');
-
   const [verifyingSub, setVerifyingSub]     = useState(null);
   const [addCodesReward, setAddCodesReward] = useState(null);
   const [expandedReward, setExpandedReward] = useState(null);
   const [showRewardForm, setShowRewardForm] = useState(false);
+  const [roleActionId, setRoleActionId]     = useState(null);
 
   useEffect(() => { loadAll(); }, []);
 
@@ -436,13 +547,11 @@ export default function AdminPage() {
     setSubmissions(prev => prev.map(s => s.$id === sub.$id ? { ...s, status: 'verified' } : s));
     setVerifyingSub(null);
   }
-
   async function handleReject(sub) {
     await updateSubmissionStatus(sub.$id, 'rejected');
     setSubmissions(prev => prev.map(s => s.$id === sub.$id ? { ...s, status: 'rejected' } : s));
     setVerifyingSub(null);
   }
-
   async function handleDeleteSubmission(sub) {
     if (!confirm('Delete this submission?')) return;
     try {
@@ -451,13 +560,28 @@ export default function AdminPage() {
     } catch (e) { setError(e.message); }
   }
 
+  async function handleToggleAdmin(u) {
+    const isAdmin = u.role === 'admin';
+    if (!confirm(`${isAdmin ? 'Remove admin from' : 'Make admin'} ${u.name || u.email}?`)) return;
+    setRoleActionId(u.$id);
+    try {
+      if (isAdmin) {
+        await demoteToUser(u.$id);
+        setUsers(prev => prev.map(x => x.$id === u.$id ? { ...x, role: 'user' } : x));
+      } else {
+        await promoteToAdmin(u.$id);
+        setUsers(prev => prev.map(x => x.$id === u.$id ? { ...x, role: 'admin' } : x));
+      }
+    } catch (e) { setError(e.message); }
+    finally { setRoleActionId(null); }
+  }
+
   async function handleToggleReward(reward) {
     try {
       await updateReward(reward.$id, { available: !reward.available });
       setRewards(prev => prev.map(r => r.$id === reward.$id ? { ...r, available: !r.available } : r));
     } catch (e) { setError(e.message); }
   }
-
   async function handleDeleteReward(reward) {
     if (!confirm(`Delete "${reward.title}"? All coupon codes will also be deleted.`)) return;
     try {
@@ -465,18 +589,15 @@ export default function AdminPage() {
       setRewards(prev => prev.filter(r => r.$id !== reward.$id));
     } catch (e) { setError(e.message); }
   }
-
   async function handleAddCodes(rewardId, codes) {
     await addCouponCodesToReward(rewardId, codes);
     await refreshCodeCounts();
-    // Re-mount the codes panel to show fresh data
     setExpandedReward(null);
     setTimeout(() => setExpandedReward(rewardId), 50);
   }
 
   const totalPoints = users.reduce((sum, u) => sum + (u.points || 0), 0);
   const pendingSubs = submissions.filter(s => s.status === 'pending');
-
   const tabs = [
     { id: 'overview',    label: 'Overview',   icon: TrendingUp },
     { id: 'submissions', label: 'Submissions', icon: Recycle    },
@@ -502,21 +623,18 @@ export default function AdminPage() {
           onClose={() => setAddCodesReward(null)}
         />
       )}
-
       <div className="max-w-6xl mx-auto">
         <div className="mb-10">
           <span className="section-tag mb-3 inline-flex"><Shield className="w-3 h-3" />Admin</span>
           <h1 className="font-display font-bold text-3xl sm:text-4xl text-moss mt-3">Admin Panel</h1>
           <p className="font-body text-bark/55 mt-2 text-sm">Manage submissions, users, and rewards.</p>
         </div>
-
         {error && (
           <div className="bg-red-50 border border-red-100 text-red-700 rounded-2xl p-4 mb-6 font-body text-sm flex items-center justify-between gap-3">
             <div className="flex items-center gap-2"><AlertTriangle className="w-4 h-4 shrink-0" />{error}</div>
             <button onClick={() => setError('')}><X className="w-4 h-4" /></button>
           </div>
         )}
-
         {/* Tabs */}
         <div className="flex gap-2 mb-8 flex-wrap">
           {tabs.map(({ id, label, icon: Icon }) => (
@@ -633,22 +751,50 @@ export default function AdminPage() {
                   <p className="font-body text-bark/45 text-sm text-center py-10">No users yet.</p>
                 ) : (
                   <div className="space-y-0">
-                    {users.map(u => (
-                      <div key={u.$id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between py-4 border-b border-eco-50 last:border-0 gap-2">
-                        <div className="min-w-0">
-                          <p className="font-display font-semibold text-sm text-moss">{u.name}</p>
-                          <p className="font-mono text-xs text-bark/40 truncate">{u.email}</p>
+                    {users.map(u => {
+                      const isSelf       = u.$id === profile?.$id || u.email === profile?.email;
+                      const isSuperAdmin = u.role === 'superadmin';
+                      const isAdmin      = u.role === 'admin';
+                      const canToggle    = profile?.role === 'superadmin' && !isSelf && !isSuperAdmin;
+                      return (
+                        <div key={u.$id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between py-4 border-b border-eco-50 last:border-0 gap-2">
+                          <div className="min-w-0">
+                            <p className="font-display font-semibold text-sm text-moss">{u.name || 'Eco Hero'}</p>
+                            <p className="font-mono text-xs text-bark/40 truncate">{u.email}</p>
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono text-xs font-bold text-eco-600 bg-eco-50 px-2.5 py-1 rounded-full">{u.points} pts</span>
+                            {isSuperAdmin && <span className="font-mono text-xs bg-moss text-cream px-2.5 py-1 rounded-full">superadmin</span>}
+                            {isAdmin      && <span className="font-mono text-xs bg-moss/10 text-moss px-2.5 py-1 rounded-full">admin</span>}
+                            {u.isVerified
+                              ? <span className="font-mono text-xs bg-eco-100 text-eco-700 px-2.5 py-1 rounded-full">verified</span>
+                              : <span className="font-mono text-xs bg-yellow-50 text-yellow-700 px-2.5 py-1 rounded-full">unverified</span>
+                            }
+                            {canToggle && (
+                              <button
+                                onClick={() => handleToggleAdmin(u)}
+                                disabled={roleActionId === u.$id}
+                                title={isAdmin ? 'Remove admin role' : 'Make admin'}
+                                className={`flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
+                                  isAdmin ? 'bg-red-50 text-red-500 hover:bg-red-100' : 'bg-eco-50 text-moss hover:bg-eco-100'
+                                }`}
+                              >
+                                {roleActionId === u.$id ? (
+                                  <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                  </svg>
+                                ) : isAdmin ? (
+                                  <><ShieldOff className="w-3 h-3" />Remove admin</>
+                                ) : (
+                                  <><ShieldCheck className="w-3 h-3" />Make admin</>
+                                )}
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-mono text-xs font-bold text-eco-600 bg-eco-50 px-2.5 py-1 rounded-full">{u.points} pts</span>
-                          {u.isAdmin && <span className="font-mono text-xs bg-moss/10 text-moss px-2.5 py-1 rounded-full">admin</span>}
-                          {u.isVerified
-                            ? <span className="font-mono text-xs bg-eco-100 text-eco-700 px-2.5 py-1 rounded-full">verified</span>
-                            : <span className="font-mono text-xs bg-yellow-50 text-yellow-700 px-2.5 py-1 rounded-full">unverified</span>
-                          }
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -657,7 +803,6 @@ export default function AdminPage() {
             {/* REWARDS */}
             {tab === 'rewards' && (
               <div className="space-y-6">
-                {/* Header row */}
                 <div className="flex items-center justify-between">
                   <h2 className="font-display font-semibold text-moss">
                     Rewards<span className="font-mono text-xs text-bark/40 ml-3">{rewards.length} total</span>
@@ -668,16 +813,12 @@ export default function AdminPage() {
                     </button>
                   )}
                 </div>
-
-                {/* Add reward form */}
                 {showRewardForm && (
                   <AddRewardForm
                     onCreated={() => { setShowRewardForm(false); loadAll(); }}
                     onCancel={() => setShowRewardForm(false)}
                   />
                 )}
-
-                {/* Rewards list */}
                 <div className="bg-white rounded-3xl border border-eco-100 p-7">
                   {rewards.length === 0 ? (
                     <div className="text-center py-10">
@@ -694,7 +835,6 @@ export default function AdminPage() {
                         const isExpanded = expandedReward === r.$id;
                         return (
                           <div key={r.$id} className="py-5 border-b border-eco-50 last:border-0">
-                            {/* Main reward row */}
                             <div className="flex items-start gap-3">
                               {/* Logo */}
                               {r.logoUrl ? (
@@ -706,7 +846,7 @@ export default function AdminPage() {
                                   <span className="font-display font-bold text-sm text-moss">{r.brandName?.charAt(0) || '?'}</span>
                                 </div>
                               )}
-                              {/* Info */}
+                              {/* Info + actions */}
                               <div className="min-w-0 flex-1">
                                 <p className="font-display font-semibold text-sm text-moss">{r.title}</p>
                                 <p className="font-body text-xs text-bark/55 mt-0.5">{r.description}</p>
@@ -715,14 +855,11 @@ export default function AdminPage() {
                                   <span className="font-mono text-xs text-bark/25">·</span>
                                   <span className="font-mono text-xs font-bold text-eco-600">{r.pointsCost} pts</span>
                                   <span className="font-mono text-xs text-bark/25">·</span>
-                                  <span className={`font-mono text-xs flex items-center gap-1 ${
-                                    available === 0 ? 'text-red-500' : 'text-eco-600'
-                                  }`}>
+                                  <span className={`font-mono text-xs flex items-center gap-1 ${available === 0 ? 'text-red-500' : 'text-eco-600'}`}>
                                     <Tag className="w-2.5 h-2.5" />
                                     {available === 0 ? 'out of stock' : `${available} left`}
                                   </span>
                                 </div>
-                                {/* Actions — always below info, wraps naturally */}
                                 <div className="flex items-center gap-2 flex-wrap mt-3">
                                   <button onClick={() => setExpandedReward(isExpanded ? null : r.$id)}
                                     className="flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-xl bg-eco-50 text-moss hover:bg-eco-100 transition-colors">
@@ -748,8 +885,6 @@ export default function AdminPage() {
                                 </div>
                               </div>
                             </div>
-
-                            {/* Inline codes panel */}
                             {isExpanded && (
                               <CodesPanel reward={r} onCodesChanged={refreshCodeCounts} />
                             )}
