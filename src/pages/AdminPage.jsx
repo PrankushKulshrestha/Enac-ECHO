@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Shield, Users, Recycle, Gift, Check, X,
   Leaf, TrendingUp, Package, Trash2, AlertTriangle,
   KeyRound, Plus, ChevronDown, ChevronUp, Tag, Hash, ShieldCheck, ShieldOff,
+  Upload, Image,
 } from 'lucide-react';
 import { useAuth } from '../lib/useAuth';
 import {
@@ -20,6 +21,111 @@ const statusStyle = {
   rejected: 'bg-red-50 text-red-600',
 };
 
+// ── LOGO UPLOAD INPUT ─────────────────────────────────────
+function LogoUpload({ value, onChange }) {
+  const inputRef = useRef(null);
+  const [dragOver, setDragOver] = useState(false);
+
+  function processFile(file) {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) return;
+    // Resize + compress to max 120×120 before base64
+    const img = new window.Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const MAX = 120;
+      const scale = Math.min(MAX / img.width, MAX / img.height, 1);
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      const b64 = canvas.toDataURL('image/webp', 0.85);
+      URL.revokeObjectURL(url);
+      onChange(b64);
+    };
+    img.src = url;
+  }
+
+  function handleFile(e) { processFile(e.target.files?.[0]); }
+  function handleDrop(e) {
+    e.preventDefault(); setDragOver(false);
+    processFile(e.dataTransfer.files?.[0]);
+  }
+
+  const isBase64 = value?.startsWith('data:');
+  const isUrl    = value && !isBase64;
+
+  return (
+    <div>
+      <label className="font-display font-medium text-xs text-bark/60 mb-1.5 block">
+        Brand Logo <span className="font-body font-normal text-bark/35">(upload image or paste URL)</span>
+      </label>
+
+      <div className="flex gap-3 items-start">
+        {/* Preview */}
+        <div className="w-16 h-16 rounded-xl border-2 border-eco-100 bg-cream/50 flex items-center justify-center shrink-0 overflow-hidden">
+          {value ? (
+            <img
+              src={value}
+              alt="Logo preview"
+              className="w-full h-full object-contain"
+              onError={e => e.target.style.display = 'none'}
+            />
+          ) : (
+            <Image className="w-6 h-6 text-bark/20" strokeWidth={1.5} />
+          )}
+        </div>
+
+        <div className="flex-1 space-y-2">
+          {/* Drop zone */}
+          <div
+            onClick={() => inputRef.current?.click()}
+            onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}
+            className={`w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed rounded-xl cursor-pointer transition-colors text-xs font-body ${
+              dragOver
+                ? 'border-moss bg-eco-50 text-moss'
+                : 'border-eco-100 text-bark/40 hover:border-moss/50 hover:text-moss/70'
+            }`}
+          >
+            <Upload className="w-3.5 h-3.5 shrink-0" />
+            {isBase64 ? 'Replace image' : 'Upload image'}
+          </div>
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleFile}
+          />
+
+          {/* URL fallback */}
+          <input
+            type="text"
+            value={isUrl ? value : ''}
+            onChange={e => onChange(e.target.value)}
+            placeholder="…or paste image URL"
+            className="w-full px-3 py-2 border-2 border-eco-100 rounded-xl font-body text-xs text-bark focus:outline-none focus:border-moss transition-colors bg-cream/50"
+          />
+
+          {value && (
+            <button
+              type="button"
+              onClick={() => onChange('')}
+              className="font-body text-xs text-red-400 hover:text-red-600 transition-colors"
+            >
+              Remove logo
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── VERIFY DIALOG ─────────────────────────────────────────
 function VerifyDialog({ submission, onApprove, onReject, onClose, isOwn }) {
   const [inputCode, setInputCode] = useState('');
@@ -35,7 +141,6 @@ function VerifyDialog({ submission, onApprove, onReject, onClose, isOwn }) {
     setLoading(true); setError('');
     try { await onApprove(submission); } catch (e) { setError(e.message); } finally { setLoading(false); }
   }
-
   async function handleReject() {
     setLoading(true); setError('');
     try { await onReject(submission); } catch (e) { setError(e.message); } finally { setLoading(false); }
@@ -55,7 +160,6 @@ function VerifyDialog({ submission, onApprove, onReject, onClose, isOwn }) {
             <X className="w-4 h-4 text-bark/50" />
           </button>
         </div>
-
         <div className="bg-eco-50 rounded-2xl p-4 mb-5">
           <div className="flex flex-wrap gap-1 mb-1">
             {items.map((item, i) => (
@@ -68,7 +172,6 @@ function VerifyDialog({ submission, onApprove, onReject, onClose, isOwn }) {
             {submission.totalPoints} pts · {new Date(submission.submittedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
           </p>
         </div>
-
         {isOwn ? (
           <div className="flex items-center gap-2 bg-yellow-50 border border-yellow-100 text-yellow-700 rounded-2xl p-3 mb-5">
             <AlertTriangle className="w-4 h-4 shrink-0" />
@@ -95,9 +198,7 @@ function VerifyDialog({ submission, onApprove, onReject, onClose, isOwn }) {
             )}
           </>
         )}
-
         {error && <div className="bg-red-50 border border-red-100 text-red-700 rounded-xl p-3 mb-4 font-body text-xs">{error}</div>}
-
         <div className="flex gap-3">
           <button onClick={handleReject} disabled={loading}
             className="flex-1 flex items-center justify-center gap-2 bg-red-50 text-red-600 font-display font-semibold text-sm py-3 rounded-2xl hover:bg-red-100 transition-colors disabled:opacity-50">
@@ -113,7 +214,7 @@ function VerifyDialog({ submission, onApprove, onReject, onClose, isOwn }) {
   );
 }
 
-// ── ADD CODES DIALOG (for existing rewards) ───────────────
+// ── ADD CODES DIALOG ──────────────────────────────────────
 function AddCodesDialog({ reward, onSave, onClose }) {
   const [raw, setRaw]         = useState('');
   const [loading, setLoading] = useState(false);
@@ -171,10 +272,10 @@ function AddCodesDialog({ reward, onSave, onClose }) {
   );
 }
 
-// ── CODES PANEL (inline per reward in list) ───────────────
+// ── CODES PANEL ───────────────────────────────────────────
 function CodesPanel({ reward, onCodesChanged }) {
-  const [codes, setCodes]         = useState([]);
-  const [loading, setLoading]     = useState(true);
+  const [codes, setCodes]           = useState([]);
+  const [loading, setLoading]       = useState(true);
   const [deletingId, setDeletingId] = useState(null);
 
   useEffect(() => { fetchCodes(); }, [reward.$id]);
@@ -206,7 +307,6 @@ function CodesPanel({ reward, onCodesChanged }) {
   if (loading) return (
     <div className="mt-3 space-y-2">{[1,2,3].map(i => <div key={i} className="h-8 bg-eco-50 rounded-xl animate-pulse" />)}</div>
   );
-
   if (codes.length === 0) return (
     <div className="mt-3 bg-eco-50 rounded-2xl p-4 text-center">
       <p className="font-body text-xs text-bark/45">No codes yet.</p>
@@ -245,9 +345,9 @@ const EMPTY_FORM = {
 };
 
 function AddRewardForm({ onCreated, onCancel }) {
-  const [form, setForm]       = useState(EMPTY_FORM);
-  const [saving, setSaving]   = useState(false);
-  const [error, setError]     = useState('');
+  const [form, setForm]     = useState(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+  const [error, setError]   = useState('');
 
   const parsedCodes = form.couponCodesRaw
     .split(',').map(c => c.trim()).filter(c => c !== '');
@@ -272,11 +372,10 @@ function AddRewardForm({ onCreated, onCancel }) {
     }
   }
 
-  const fields = [
+  const textFields = [
     { key: 'title',       label: 'Voucher Name',  placeholder: '10% off on Starbucks',  span: 2 },
     { key: 'brandName',   label: 'Brand Name',    placeholder: 'Starbucks',              span: 1 },
     { key: 'partner',     label: 'Partner',       placeholder: 'Starbucks India',        span: 1 },
-    { key: 'logoUrl',     label: 'Logo URL',      placeholder: 'https://...',            span: 2 },
     { key: 'description', label: 'Description',   placeholder: 'Get 10% off (up to ₹100) on your next Starbucks order', span: 2 },
   ];
 
@@ -300,7 +399,7 @@ function AddRewardForm({ onCreated, onCancel }) {
 
       <form onSubmit={handleSubmit}>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-          {fields.map(({ key, label, placeholder, span }) => (
+          {textFields.map(({ key, label, placeholder, span }) => (
             <div key={key} className={span === 2 ? 'sm:col-span-2' : ''}>
               <label className="font-display font-medium text-xs text-bark/60 mb-1.5 block">{label}</label>
               <input
@@ -312,6 +411,11 @@ function AddRewardForm({ onCreated, onCancel }) {
               />
             </div>
           ))}
+
+          {/* Logo upload — full width */}
+          <div className="sm:col-span-2">
+            <LogoUpload value={form.logoUrl} onChange={val => set('logoUrl', val)} />
+          </div>
 
           <div>
             <label className="font-display font-medium text-xs text-bark/60 mb-1.5 block">Points Cost Per Coupon</label>
@@ -326,8 +430,7 @@ function AddRewardForm({ onCreated, onCancel }) {
 
           <div>
             <label className="font-display font-medium text-xs text-bark/60 mb-1.5 flex items-center gap-1.5">
-              Quantity
-              <span className="font-body font-normal text-bark/35">(auto)</span>
+              Quantity <span className="font-body font-normal text-bark/35">(auto)</span>
             </label>
             <div className={`w-full px-4 py-2.5 border-2 rounded-xl font-mono text-sm flex items-center gap-2 transition-colors ${
               quantity > 0 ? 'border-eco-300 bg-eco-50 text-eco-700' : 'border-eco-100 bg-cream/30 text-bark/35'
@@ -339,8 +442,7 @@ function AddRewardForm({ onCreated, onCancel }) {
 
           <div className="sm:col-span-2">
             <label className="font-display font-medium text-xs text-bark/60 mb-1.5 block">
-              Coupon Codes
-              <span className="font-body font-normal text-bark/35 ml-1.5">comma separated</span>
+              Coupon Codes <span className="font-body font-normal text-bark/35 ml-1.5">comma separated</span>
             </label>
             <textarea
               value={form.couponCodesRaw}
@@ -419,9 +521,6 @@ export default function AdminPage() {
     setCodeCounts(counts);
   }
 
-  // ✅ FIX #5: Simplified isOwnSubmission — removed redundant u.userId fallback.
-  // The users collection uses $id as the primary key consistently.
-  // Checking both u.$id and u.userId was a sign of data model confusion.
   function isOwnSubmission(sub) {
     if (sub.userId === user.$id) return true;
     const submitter = users.find(u => u.$id === sub.userId);
@@ -450,8 +549,7 @@ export default function AdminPage() {
 
   async function handleToggleAdmin(u) {
     const isAdmin = u.role === 'admin';
-    const action  = isAdmin ? 'Remove admin from' : 'Make admin';
-    if (!confirm(`${action} ${u.name || u.email}?`)) return;
+    if (!confirm(`${isAdmin ? 'Remove admin from' : 'Make admin'} ${u.name || u.email}?`)) return;
     setRoleActionId(u.$id);
     try {
       if (isAdmin) {
@@ -654,7 +752,7 @@ export default function AdminPage() {
                       return (
                         <div key={u.$id} className="flex items-center justify-between py-4 border-b border-eco-50 last:border-0 gap-3 flex-wrap">
                           <div className="flex-1 min-w-0">
-                            <p className="font-display font-semibold text-sm text-moss">{u.name}</p>
+                            <p className="font-display font-semibold text-sm text-moss">{u.name || 'Eco Hero'}</p>
                             <p className="font-mono text-xs text-bark/40">{u.email}</p>
                           </div>
                           <div className="flex items-center gap-2 shrink-0 flex-wrap">
@@ -753,9 +851,7 @@ export default function AdminPage() {
                                     <span className="font-mono text-xs text-bark/25">·</span>
                                     <span className="font-mono text-xs font-bold text-eco-600">{r.pointsCost} pts</span>
                                     <span className="font-mono text-xs text-bark/25">·</span>
-                                    <span className={`font-mono text-xs flex items-center gap-1 ${
-                                      available === 0 ? 'text-red-500' : 'text-eco-600'
-                                    }`}>
+                                    <span className={`font-mono text-xs flex items-center gap-1 ${available === 0 ? 'text-red-500' : 'text-eco-600'}`}>
                                       <Tag className="w-2.5 h-2.5" />
                                       {available === 0 ? 'out of stock' : `${available} left`}
                                     </span>
