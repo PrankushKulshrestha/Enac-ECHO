@@ -1,9 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Shield, Users, Recycle, Gift, Check, X,
   Leaf, TrendingUp, Package, Trash2, AlertTriangle,
-  KeyRound, Plus, ChevronDown, ChevronUp, Tag, Hash, ShieldCheck, ShieldOff,
-  Upload, Image,
+  KeyRound, Plus, ChevronDown, ChevronUp, Tag, Hash,
 } from 'lucide-react';
 import { useAuth } from '../lib/useAuth';
 import {
@@ -12,7 +11,6 @@ import {
   addCouponCodesToReward, getCouponCodesForReward,
   getAvailableCodeCounts, deleteCouponCode,
   deleteSubmission, updateSubmissionStatus,
-  promoteToAdmin, demoteToUser,
 } from '../lib/db';
 
 const statusStyle = {
@@ -20,111 +18,6 @@ const statusStyle = {
   pending:  'bg-yellow-50 text-yellow-700',
   rejected: 'bg-red-50 text-red-600',
 };
-
-// ── LOGO UPLOAD INPUT ─────────────────────────────────────
-function LogoUpload({ value, onChange }) {
-  const inputRef = useRef(null);
-  const [dragOver, setDragOver] = useState(false);
-
-  function processFile(file) {
-    if (!file) return;
-    if (!file.type.startsWith('image/')) return;
-    // Resize + compress to max 120×120 before base64
-    const img = new window.Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      const MAX = 120;
-      const scale = Math.min(MAX / img.width, MAX / img.height, 1);
-      const w = Math.round(img.width * scale);
-      const h = Math.round(img.height * scale);
-      const canvas = document.createElement('canvas');
-      canvas.width = w; canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, w, h);
-      const b64 = canvas.toDataURL('image/webp', 0.85);
-      URL.revokeObjectURL(url);
-      onChange(b64);
-    };
-    img.src = url;
-  }
-
-  function handleFile(e) { processFile(e.target.files?.[0]); }
-  function handleDrop(e) {
-    e.preventDefault(); setDragOver(false);
-    processFile(e.dataTransfer.files?.[0]);
-  }
-
-  const isBase64 = value?.startsWith('data:');
-  const isUrl    = value && !isBase64;
-
-  return (
-    <div>
-      <label className="font-display font-medium text-xs text-bark/60 mb-1.5 block">
-        Brand Logo <span className="font-body font-normal text-bark/35">(upload image or paste URL)</span>
-      </label>
-
-      <div className="flex gap-3 items-start">
-        {/* Preview */}
-        <div className="w-16 h-16 rounded-xl border-2 border-eco-100 bg-cream/50 flex items-center justify-center shrink-0 overflow-hidden">
-          {value ? (
-            <img
-              src={value}
-              alt="Logo preview"
-              className="w-full h-full object-contain"
-              onError={e => e.target.style.display = 'none'}
-            />
-          ) : (
-            <Image className="w-6 h-6 text-bark/20" strokeWidth={1.5} />
-          )}
-        </div>
-
-        <div className="flex-1 space-y-2">
-          {/* Drop zone */}
-          <div
-            onClick={() => inputRef.current?.click()}
-            onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={handleDrop}
-            className={`w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed rounded-xl cursor-pointer transition-colors text-xs font-body ${
-              dragOver
-                ? 'border-moss bg-eco-50 text-moss'
-                : 'border-eco-100 text-bark/40 hover:border-moss/50 hover:text-moss/70'
-            }`}
-          >
-            <Upload className="w-3.5 h-3.5 shrink-0" />
-            {isBase64 ? 'Replace image' : 'Upload image'}
-          </div>
-          <input
-            ref={inputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleFile}
-          />
-
-          {/* URL fallback */}
-          <input
-            type="text"
-            value={isUrl ? value : ''}
-            onChange={e => onChange(e.target.value)}
-            placeholder="…or paste image URL"
-            className="w-full px-3 py-2 border-2 border-eco-100 rounded-xl font-body text-xs text-bark focus:outline-none focus:border-moss transition-colors bg-cream/50"
-          />
-
-          {value && (
-            <button
-              type="button"
-              onClick={() => onChange('')}
-              className="font-body text-xs text-red-400 hover:text-red-600 transition-colors"
-            >
-              Remove logo
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ── VERIFY DIALOG ─────────────────────────────────────────
 function VerifyDialog({ submission, onApprove, onReject, onClose, isOwn }) {
@@ -141,6 +34,7 @@ function VerifyDialog({ submission, onApprove, onReject, onClose, isOwn }) {
     setLoading(true); setError('');
     try { await onApprove(submission); } catch (e) { setError(e.message); } finally { setLoading(false); }
   }
+
   async function handleReject() {
     setLoading(true); setError('');
     try { await onReject(submission); } catch (e) { setError(e.message); } finally { setLoading(false); }
@@ -160,6 +54,7 @@ function VerifyDialog({ submission, onApprove, onReject, onClose, isOwn }) {
             <X className="w-4 h-4 text-bark/50" />
           </button>
         </div>
+
         <div className="bg-eco-50 rounded-2xl p-4 mb-5">
           <div className="flex flex-wrap gap-1 mb-1">
             {items.map((item, i) => (
@@ -172,6 +67,7 @@ function VerifyDialog({ submission, onApprove, onReject, onClose, isOwn }) {
             {submission.totalPoints} pts · {new Date(submission.submittedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
           </p>
         </div>
+
         {isOwn ? (
           <div className="flex items-center gap-2 bg-yellow-50 border border-yellow-100 text-yellow-700 rounded-2xl p-3 mb-5">
             <AlertTriangle className="w-4 h-4 shrink-0" />
@@ -198,7 +94,9 @@ function VerifyDialog({ submission, onApprove, onReject, onClose, isOwn }) {
             )}
           </>
         )}
+
         {error && <div className="bg-red-50 border border-red-100 text-red-700 rounded-xl p-3 mb-4 font-body text-xs">{error}</div>}
+
         <div className="flex gap-3">
           <button onClick={handleReject} disabled={loading}
             className="flex-1 flex items-center justify-center gap-2 bg-red-50 text-red-600 font-display font-semibold text-sm py-3 rounded-2xl hover:bg-red-100 transition-colors disabled:opacity-50">
@@ -214,7 +112,7 @@ function VerifyDialog({ submission, onApprove, onReject, onClose, isOwn }) {
   );
 }
 
-// ── ADD CODES DIALOG ──────────────────────────────────────
+// ── ADD CODES DIALOG (for existing rewards) ───────────────
 function AddCodesDialog({ reward, onSave, onClose }) {
   const [raw, setRaw]         = useState('');
   const [loading, setLoading] = useState(false);
@@ -272,10 +170,10 @@ function AddCodesDialog({ reward, onSave, onClose }) {
   );
 }
 
-// ── CODES PANEL ───────────────────────────────────────────
+// ── CODES PANEL (inline per reward in list) ───────────────
 function CodesPanel({ reward, onCodesChanged }) {
-  const [codes, setCodes]           = useState([]);
-  const [loading, setLoading]       = useState(true);
+  const [codes, setCodes]         = useState([]);
+  const [loading, setLoading]     = useState(true);
   const [deletingId, setDeletingId] = useState(null);
 
   useEffect(() => { fetchCodes(); }, [reward.$id]);
@@ -307,6 +205,7 @@ function CodesPanel({ reward, onCodesChanged }) {
   if (loading) return (
     <div className="mt-3 space-y-2">{[1,2,3].map(i => <div key={i} className="h-8 bg-eco-50 rounded-xl animate-pulse" />)}</div>
   );
+
   if (codes.length === 0) return (
     <div className="mt-3 bg-eco-50 rounded-2xl p-4 text-center">
       <p className="font-body text-xs text-bark/45">No codes yet.</p>
@@ -345,10 +244,11 @@ const EMPTY_FORM = {
 };
 
 function AddRewardForm({ onCreated, onCancel }) {
-  const [form, setForm]     = useState(EMPTY_FORM);
-  const [saving, setSaving] = useState(false);
-  const [error, setError]   = useState('');
+  const [form, setForm]       = useState(EMPTY_FORM);
+  const [saving, setSaving]   = useState(false);
+  const [error, setError]     = useState('');
 
+  // Auto-compute quantity from raw codes input
   const parsedCodes = form.couponCodesRaw
     .split(',').map(c => c.trim()).filter(c => c !== '');
   const quantity = parsedCodes.length;
@@ -372,15 +272,18 @@ function AddRewardForm({ onCreated, onCancel }) {
     }
   }
 
-  const textFields = [
+  // Field config for the text inputs
+  const fields = [
     { key: 'title',       label: 'Voucher Name',  placeholder: '10% off on Starbucks',  span: 2 },
     { key: 'brandName',   label: 'Brand Name',    placeholder: 'Starbucks',              span: 1 },
     { key: 'partner',     label: 'Partner',       placeholder: 'Starbucks India',        span: 1 },
+    { key: 'logoUrl',     label: 'Logo URL',      placeholder: 'https://...',            span: 2 },
     { key: 'description', label: 'Description',   placeholder: 'Get 10% off (up to ₹100) on your next Starbucks order', span: 2 },
   ];
 
   return (
     <div className="bg-white rounded-3xl border border-eco-100 p-7">
+      {/* Heading */}
       <div className="flex items-center gap-3 mb-7">
         <div className="w-10 h-10 bg-eco-100 rounded-xl flex items-center justify-center">
           <Gift className="w-5 h-5 text-moss" strokeWidth={1.5} />
@@ -399,7 +302,7 @@ function AddRewardForm({ onCreated, onCancel }) {
 
       <form onSubmit={handleSubmit}>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-          {textFields.map(({ key, label, placeholder, span }) => (
+          {fields.map(({ key, label, placeholder, span }) => (
             <div key={key} className={span === 2 ? 'sm:col-span-2' : ''}>
               <label className="font-display font-medium text-xs text-bark/60 mb-1.5 block">{label}</label>
               <input
@@ -412,11 +315,7 @@ function AddRewardForm({ onCreated, onCancel }) {
             </div>
           ))}
 
-          {/* Logo upload — full width */}
-          <div className="sm:col-span-2">
-            <LogoUpload value={form.logoUrl} onChange={val => set('logoUrl', val)} />
-          </div>
-
+          {/* Points Cost */}
           <div>
             <label className="font-display font-medium text-xs text-bark/60 mb-1.5 block">Points Cost Per Coupon</label>
             <input
@@ -428,9 +327,11 @@ function AddRewardForm({ onCreated, onCancel }) {
             />
           </div>
 
+          {/* Quantity — read only, auto-calculated */}
           <div>
             <label className="font-display font-medium text-xs text-bark/60 mb-1.5 flex items-center gap-1.5">
-              Quantity <span className="font-body font-normal text-bark/35">(auto)</span>
+              Quantity
+              <span className="font-body font-normal text-bark/35">(auto)</span>
             </label>
             <div className={`w-full px-4 py-2.5 border-2 rounded-xl font-mono text-sm flex items-center gap-2 transition-colors ${
               quantity > 0 ? 'border-eco-300 bg-eco-50 text-eco-700' : 'border-eco-100 bg-cream/30 text-bark/35'
@@ -440,9 +341,11 @@ function AddRewardForm({ onCreated, onCancel }) {
             </div>
           </div>
 
+          {/* Coupon Codes — full width */}
           <div className="sm:col-span-2">
             <label className="font-display font-medium text-xs text-bark/60 mb-1.5 block">
-              Coupon Codes <span className="font-body font-normal text-bark/35 ml-1.5">comma separated</span>
+              Coupon Codes
+              <span className="font-body font-normal text-bark/35 ml-1.5">comma separated</span>
             </label>
             <textarea
               value={form.couponCodesRaw}
@@ -451,6 +354,7 @@ function AddRewardForm({ onCreated, onCancel }) {
               rows={3}
               className="w-full px-4 py-3 border-2 border-eco-100 rounded-xl font-mono text-sm text-bark focus:outline-none focus:border-moss transition-colors bg-cream/50 resize-none"
             />
+            {/* Live preview of parsed codes */}
             {quantity > 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {parsedCodes.slice(0, 6).map((c, i) => (
@@ -464,6 +368,7 @@ function AddRewardForm({ onCreated, onCancel }) {
           </div>
         </div>
 
+        {/* Actions */}
         <div className="flex gap-3 pt-2 border-t border-eco-50">
           <button type="button" onClick={onCancel}
             className="flex-1 sm:flex-none px-6 bg-eco-50 text-moss font-display font-semibold text-sm py-3 rounded-2xl hover:bg-eco-100 transition-colors">
@@ -494,7 +399,6 @@ export default function AdminPage() {
   const [addCodesReward, setAddCodesReward] = useState(null);
   const [expandedReward, setExpandedReward] = useState(null);
   const [showRewardForm, setShowRewardForm] = useState(false);
-  const [roleActionId, setRoleActionId]     = useState(null);
 
   useEffect(() => { loadAll(); }, []);
 
@@ -523,7 +427,7 @@ export default function AdminPage() {
 
   function isOwnSubmission(sub) {
     if (sub.userId === user.$id) return true;
-    const submitter = users.find(u => u.$id === sub.userId);
+    const submitter = users.find(u => u.$id === sub.userId || u.userId === sub.userId);
     return !!(submitter && profile?.email && submitter.email === profile.email);
   }
 
@@ -547,22 +451,6 @@ export default function AdminPage() {
     } catch (e) { setError(e.message); }
   }
 
-  async function handleToggleAdmin(u) {
-    const isAdmin = u.role === 'admin';
-    if (!confirm(`${isAdmin ? 'Remove admin from' : 'Make admin'} ${u.name || u.email}?`)) return;
-    setRoleActionId(u.$id);
-    try {
-      if (isAdmin) {
-        await demoteToUser(u.$id);
-        setUsers(prev => prev.map(x => x.$id === u.$id ? { ...x, role: 'user' } : x));
-      } else {
-        await promoteToAdmin(u.$id);
-        setUsers(prev => prev.map(x => x.$id === u.$id ? { ...x, role: 'admin' } : x));
-      }
-    } catch (e) { setError(e.message); }
-    finally { setRoleActionId(null); }
-  }
-
   async function handleToggleReward(reward) {
     try {
       await updateReward(reward.$id, { available: !reward.available });
@@ -581,6 +469,7 @@ export default function AdminPage() {
   async function handleAddCodes(rewardId, codes) {
     await addCouponCodesToReward(rewardId, codes);
     await refreshCodeCounts();
+    // Re-mount the codes panel to show fresh data
     setExpandedReward(null);
     setTimeout(() => setExpandedReward(rewardId), 50);
   }
@@ -688,8 +577,8 @@ export default function AdminPage() {
                       const isPending = sub.status === 'pending';
                       return (
                         <div key={sub.$id} className="py-4 border-b border-eco-50 last:border-0">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex-1 min-w-0">
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                            <div className="min-w-0">
                               <div className="flex flex-wrap gap-1 mb-1">
                                 {items.map((item, i) => (
                                   <span key={i} className="font-body text-xs bg-eco-50 text-bark/70 px-2 py-0.5 rounded-full">
@@ -697,11 +586,11 @@ export default function AdminPage() {
                                   </span>
                                 ))}
                               </div>
-                              <p className="font-mono text-xs text-bark/40">
+                              <p className="font-mono text-xs text-bark/40 truncate">
                                 {sub.userId} · {new Date(sub.submittedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                               </p>
                             </div>
-                            <div className="flex items-center gap-2 shrink-0">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-display font-semibold text-sm text-eco-600">
                                 {sub.status === 'verified' ? '+' : ''}{sub.totalPoints} pts
                               </span>
@@ -744,52 +633,22 @@ export default function AdminPage() {
                   <p className="font-body text-bark/45 text-sm text-center py-10">No users yet.</p>
                 ) : (
                   <div className="space-y-0">
-                    {users.map(u => {
-                      const isSelf       = u.$id === profile?.$id || u.email === profile?.email;
-                      const isSuperAdmin = u.role === 'superadmin';
-                      const isAdmin      = u.role === 'admin';
-                      const canToggle    = profile?.role === 'superadmin' && !isSelf && !isSuperAdmin;
-                      return (
-                        <div key={u.$id} className="flex items-center justify-between py-4 border-b border-eco-50 last:border-0 gap-3 flex-wrap">
-                          <div className="flex-1 min-w-0">
-                            <p className="font-display font-semibold text-sm text-moss">{u.name || 'Eco Hero'}</p>
-                            <p className="font-mono text-xs text-bark/40">{u.email}</p>
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                            <span className="font-mono text-xs font-bold text-eco-600 bg-eco-50 px-2.5 py-1 rounded-full">{u.points} pts</span>
-                            {isSuperAdmin && <span className="font-mono text-xs bg-moss text-cream px-2.5 py-1 rounded-full">superadmin</span>}
-                            {isAdmin      && <span className="font-mono text-xs bg-moss/10 text-moss px-2.5 py-1 rounded-full">admin</span>}
-                            {u.isVerified
-                              ? <span className="font-mono text-xs bg-eco-100 text-eco-700 px-2.5 py-1 rounded-full">verified</span>
-                              : <span className="font-mono text-xs bg-yellow-50 text-yellow-700 px-2.5 py-1 rounded-full">unverified</span>
-                            }
-                            {canToggle && (
-                              <button
-                                onClick={() => handleToggleAdmin(u)}
-                                disabled={roleActionId === u.$id}
-                                title={isAdmin ? 'Remove admin role' : 'Make admin'}
-                                className={`flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
-                                  isAdmin
-                                    ? 'bg-red-50 text-red-500 hover:bg-red-100'
-                                    : 'bg-eco-50 text-moss hover:bg-eco-100'
-                                }`}
-                              >
-                                {roleActionId === u.$id ? (
-                                  <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                                  </svg>
-                                ) : isAdmin ? (
-                                  <><ShieldOff className="w-3 h-3" />Remove admin</>
-                                ) : (
-                                  <><ShieldCheck className="w-3 h-3" />Make admin</>
-                                )}
-                              </button>
-                            )}
-                          </div>
+                    {users.map(u => (
+                      <div key={u.$id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between py-4 border-b border-eco-50 last:border-0 gap-2">
+                        <div className="min-w-0">
+                          <p className="font-display font-semibold text-sm text-moss">{u.name}</p>
+                          <p className="font-mono text-xs text-bark/40 truncate">{u.email}</p>
                         </div>
-                      );
-                    })}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono text-xs font-bold text-eco-600 bg-eco-50 px-2.5 py-1 rounded-full">{u.points} pts</span>
+                          {u.isAdmin && <span className="font-mono text-xs bg-moss/10 text-moss px-2.5 py-1 rounded-full">admin</span>}
+                          {u.isVerified
+                            ? <span className="font-mono text-xs bg-eco-100 text-eco-700 px-2.5 py-1 rounded-full">verified</span>
+                            : <span className="font-mono text-xs bg-yellow-50 text-yellow-700 px-2.5 py-1 rounded-full">unverified</span>
+                          }
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -798,6 +657,7 @@ export default function AdminPage() {
             {/* REWARDS */}
             {tab === 'rewards' && (
               <div className="space-y-6">
+                {/* Header row */}
                 <div className="flex items-center justify-between">
                   <h2 className="font-display font-semibold text-moss">
                     Rewards<span className="font-mono text-xs text-bark/40 ml-3">{rewards.length} total</span>
@@ -809,6 +669,7 @@ export default function AdminPage() {
                   )}
                 </div>
 
+                {/* Add reward form */}
                 {showRewardForm && (
                   <AddRewardForm
                     onCreated={() => { setShowRewardForm(false); loadAll(); }}
@@ -816,6 +677,7 @@ export default function AdminPage() {
                   />
                 )}
 
+                {/* Rewards list */}
                 <div className="bg-white rounded-3xl border border-eco-100 p-7">
                   {rewards.length === 0 ? (
                     <div className="text-center py-10">
@@ -832,58 +694,62 @@ export default function AdminPage() {
                         const isExpanded = expandedReward === r.$id;
                         return (
                           <div key={r.$id} className="py-5 border-b border-eco-50 last:border-0">
-                            <div className="flex items-start justify-between gap-4 flex-wrap">
-                              <div className="flex items-start gap-3 flex-1 min-w-0">
-                                {r.logoUrl ? (
-                                  <img src={r.logoUrl} alt={r.brandName}
-                                    className="w-10 h-10 rounded-xl object-contain border border-eco-100 shrink-0 mt-0.5"
-                                    onError={e => e.target.style.display='none'} />
-                                ) : (
-                                  <div className="w-10 h-10 bg-eco-100 rounded-xl flex items-center justify-center shrink-0 mt-0.5">
-                                    <span className="font-display font-bold text-sm text-moss">{r.brandName?.charAt(0) || '?'}</span>
-                                  </div>
-                                )}
-                                <div className="min-w-0">
-                                  <p className="font-display font-semibold text-sm text-moss">{r.title}</p>
-                                  <p className="font-body text-xs text-bark/55 mt-0.5">{r.description}</p>
-                                  <div className="flex items-center gap-2 mt-2 flex-wrap">
-                                    <span className="font-mono text-xs text-bark/40">{r.brandName}</span>
-                                    <span className="font-mono text-xs text-bark/25">·</span>
-                                    <span className="font-mono text-xs font-bold text-eco-600">{r.pointsCost} pts</span>
-                                    <span className="font-mono text-xs text-bark/25">·</span>
-                                    <span className={`font-mono text-xs flex items-center gap-1 ${available === 0 ? 'text-red-500' : 'text-eco-600'}`}>
-                                      <Tag className="w-2.5 h-2.5" />
-                                      {available === 0 ? 'out of stock' : `${available} left`}
-                                    </span>
-                                  </div>
+                            {/* Main reward row */}
+                            <div className="flex items-start gap-3">
+                              {/* Logo */}
+                              {r.logoUrl ? (
+                                <img src={r.logoUrl} alt={r.brandName}
+                                  className="w-10 h-10 rounded-xl object-contain border border-eco-100 shrink-0 mt-0.5"
+                                  onError={e => e.target.style.display='none'} />
+                              ) : (
+                                <div className="w-10 h-10 bg-eco-100 rounded-xl flex items-center justify-center shrink-0 mt-0.5">
+                                  <span className="font-display font-bold text-sm text-moss">{r.brandName?.charAt(0) || '?'}</span>
                                 </div>
-                              </div>
-
-                              <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                                <button onClick={() => setExpandedReward(isExpanded ? null : r.$id)}
-                                  className="flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-xl bg-eco-50 text-moss hover:bg-eco-100 transition-colors">
-                                  {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                                  Codes
-                                </button>
-                                <button onClick={() => setAddCodesReward(r)}
-                                  className="flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-xl bg-eco-50 text-moss hover:bg-eco-100 transition-colors">
-                                  <Plus className="w-3 h-3" />Add
-                                </button>
-                                <button onClick={() => handleToggleReward(r)}
-                                  className={`flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-xl transition-all duration-200 ${
-                                    r.available
-                                      ? 'bg-eco-100 text-eco-700 hover:bg-red-50 hover:text-red-600'
-                                      : 'bg-yellow-50 text-yellow-700 hover:bg-eco-100 hover:text-eco-700'
+                              )}
+                              {/* Info */}
+                              <div className="min-w-0 flex-1">
+                                <p className="font-display font-semibold text-sm text-moss">{r.title}</p>
+                                <p className="font-body text-xs text-bark/55 mt-0.5">{r.description}</p>
+                                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                                  <span className="font-mono text-xs text-bark/40">{r.brandName}</span>
+                                  <span className="font-mono text-xs text-bark/25">·</span>
+                                  <span className="font-mono text-xs font-bold text-eco-600">{r.pointsCost} pts</span>
+                                  <span className="font-mono text-xs text-bark/25">·</span>
+                                  <span className={`font-mono text-xs flex items-center gap-1 ${
+                                    available === 0 ? 'text-red-500' : 'text-eco-600'
                                   }`}>
-                                  {r.available ? <><Check className="w-3 h-3" />active</> : <><X className="w-3 h-3" />inactive</>}
-                                </button>
-                                <button onClick={() => handleDeleteReward(r)}
-                                  className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 transition-colors group">
-                                  <Trash2 className="w-3.5 h-3.5 text-bark/25 group-hover:text-red-400 transition-colors" />
-                                </button>
+                                    <Tag className="w-2.5 h-2.5" />
+                                    {available === 0 ? 'out of stock' : `${available} left`}
+                                  </span>
+                                </div>
+                                {/* Actions — always below info, wraps naturally */}
+                                <div className="flex items-center gap-2 flex-wrap mt-3">
+                                  <button onClick={() => setExpandedReward(isExpanded ? null : r.$id)}
+                                    className="flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-xl bg-eco-50 text-moss hover:bg-eco-100 transition-colors">
+                                    {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                    Codes
+                                  </button>
+                                  <button onClick={() => setAddCodesReward(r)}
+                                    className="flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-xl bg-eco-50 text-moss hover:bg-eco-100 transition-colors">
+                                    <Plus className="w-3 h-3" />Add
+                                  </button>
+                                  <button onClick={() => handleToggleReward(r)}
+                                    className={`flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-xl transition-all duration-200 ${
+                                      r.available
+                                        ? 'bg-eco-100 text-eco-700 hover:bg-red-50 hover:text-red-600'
+                                        : 'bg-yellow-50 text-yellow-700 hover:bg-eco-100 hover:text-eco-700'
+                                    }`}>
+                                    {r.available ? <><Check className="w-3 h-3" />active</> : <><X className="w-3 h-3" />inactive</>}
+                                  </button>
+                                  <button onClick={() => handleDeleteReward(r)}
+                                    className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 transition-colors group">
+                                    <Trash2 className="w-3.5 h-3.5 text-bark/25 group-hover:text-red-400 transition-colors" />
+                                  </button>
+                                </div>
                               </div>
                             </div>
 
+                            {/* Inline codes panel */}
                             {isExpanded && (
                               <CodesPanel reward={r} onCodesChanged={refreshCodeCounts} />
                             )}
