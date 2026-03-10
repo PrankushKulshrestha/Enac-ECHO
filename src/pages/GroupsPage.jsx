@@ -40,8 +40,7 @@ export default function GroupsPage() {
     loadAll();
   }, [profile]);
 
-  const currentGroupId =
-    typeof profile?.groupIds === "string" ? profile.groupIds.trim() : "";
+  const currentGroupId = profile?.groupId?.trim() || "";
   const alreadyInGroup = !!currentGroupId;
 
   async function loadAll(overrideGroupId) {
@@ -97,7 +96,10 @@ export default function GroupsPage() {
     try {
       const newGroup = await createGroup(trimmedName, user.$id);
       await refreshProfile();
-      await loadAll(newGroup.$id);
+      setGroups([newGroup]);
+      setActiveGroupIdx(0);
+      const lb = await getGroupLeaderboard();
+      setLeaderboard(lb?.documents ?? []);
       setGroupName("");
       setShowCreate(false);
     } catch (e) {
