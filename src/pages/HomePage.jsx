@@ -88,7 +88,7 @@ function BinMap() {
       const L = window.L;
 
       const map = L.map(mapRef.current, {
-        center: [28.60985, 77.03390],
+        center: [28.610335035820555, 77.03789310072234],
         zoom: 17,
         scrollWheelZoom: false,
       });
