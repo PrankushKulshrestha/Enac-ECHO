@@ -40,8 +40,7 @@ export default function GroupsPage() {
     loadAll();
   }, [profile]);
 
-  const currentGroupId =
-    typeof profile?.groupIds === "string" ? profile.groupIds.trim() : "";
+  const currentGroupId = profile?.groupId?.trim() || "";
   const alreadyInGroup = !!currentGroupId;
 
   async function loadAll() {

@@ -280,7 +280,7 @@ export default function DashboardPage() {
       {showModal && (
         <SubmitModal
           userId={user.$id}
-          groupId={profile?.groupIds?.[0] || null}
+          groupId={profile?.groupId || null}
           onClose={() => setShowModal(false)}
           onSuccess={handleSubmitSuccess}
         />
@@ -393,10 +393,10 @@ export default function DashboardPage() {
                 <Users className="w-5 h-5 text-moss" strokeWidth={1.5} />
               </div>
               <h3 className="font-display font-semibold text-moss text-base mb-1">
-                {profile?.groupIds?.length ? 'My Group' : 'Join a Group'}
+                {profile?.groupId ? 'My Group' : 'Join a Group'}
               </h3>
               <p className="font-body text-bark/50 text-xs leading-relaxed">
-                {profile?.groupIds?.length ? 'View your group stats and leaderboard.' : 'Team up and compete with friends.'}
+                {profile?.groupId ? 'View your group stats and leaderboard.' : 'Team up and compete with friends.'}
               </p>
             </Link>
           </div>

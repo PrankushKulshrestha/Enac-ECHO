@@ -490,6 +490,8 @@ async function handleRedemptions(action, payload, userId) {
 async function handleGroups(action, payload, userId) {
   switch (action) {
     case "create": {
+      const profile = await db().getDocument(DB_ID, COLS.USERS, userId);
+      if (profile.groupId) throw new Error("You are already in a group. Leave it before creating a new one.");
       const group = await db().createDocument(DB_ID, COLS.GROUPS, ID.unique(), {
         name: payload.name,
         createdBy: userId,
@@ -497,9 +499,8 @@ async function handleGroups(action, payload, userId) {
         totalPoints: 0,
         createdAt: new Date().toISOString(),
       });
-      const profile = await db().getDocument(DB_ID, COLS.USERS, userId);
       await db().updateDocument(DB_ID, COLS.USERS, userId, {
-        groupIds: [...(profile.groupIds || []), group.$id],
+        groupId: group.$id,
       });
       return group;
     }
@@ -526,9 +527,8 @@ async function handleGroups(action, payload, userId) {
       await db().updateDocument(DB_ID, COLS.GROUPS, groupId, {
         memberIds: JSON.stringify(members),
       });
-      const profile = await db().getDocument(DB_ID, COLS.USERS, userId);
       await db().updateDocument(DB_ID, COLS.USERS, userId, {
-        groupIds: (profile.groupIds || []).filter((id) => id !== groupId),
+        groupId: null,
       });
       if (members.length === 0) {
         const pending = await db().listDocuments(DB_ID, COLS.INVITES, [
@@ -569,19 +569,17 @@ async function handleGroups(action, payload, userId) {
       ]);
     case "acceptInvite": {
       const { inviteId, groupId } = payload;
+      const profile = await db().getDocument(DB_ID, COLS.USERS, userId);
+      if (profile.groupId) throw new Error("You are already in a group. Leave it before accepting another invite.");
       const group = await db().getDocument(DB_ID, COLS.GROUPS, groupId);
       const members = JSON.parse(group.memberIds || "[]");
       if (!members.includes(userId)) members.push(userId);
       await db().updateDocument(DB_ID, COLS.GROUPS, groupId, {
         memberIds: JSON.stringify(members),
       });
-      const profile = await db().getDocument(DB_ID, COLS.USERS, userId);
-      const groupIds = profile.groupIds || [];
-      if (!groupIds.includes(groupId)) {
-        await db().updateDocument(DB_ID, COLS.USERS, userId, {
-          groupIds: [...groupIds, groupId],
-        });
-      }
+      await db().updateDocument(DB_ID, COLS.USERS, userId, {
+        groupId: groupId,
+      });
       await db().updateDocument(DB_ID, COLS.INVITES, inviteId, { status: "accepted" });
       return { success: true };
     }
