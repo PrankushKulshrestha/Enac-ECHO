@@ -5,7 +5,7 @@ import { AuthContext } from './useAuth';
 
 const NSUT_EMAIL = /@nsut\.ac\.in$/i;
 const DEV_ALLOWLIST = [
-  'kulshresthaprankush@gmail.com', 'iitjee202312345@gmail.com'
+  'kulshresthaprankush@gmail.com', 'iitjee202312345@gmail.com', "jojot3750@gmail.com"
 ];
 
 function userIdStorageKey(email) {
