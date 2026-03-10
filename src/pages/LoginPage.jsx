@@ -1,25 +1,25 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Leaf, Mail, User, AlertCircle, Send } from 'lucide-react';
-import { useAuth } from '../lib/useAuth';
+import { useState } from "react";
+import { Link } from "react-router-dom";
+import { Leaf, Mail, User, AlertCircle, Send } from "lucide-react";
+import { useAuth } from "../lib/useAuth";
 
 const NSUT_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@nsut\.ac\.in$/i;
-const DEV_ALLOWLIST = ['kulshresthaprankush@gmail.com'];
+const DEV_ALLOWLIST = ["kulshresthaprankush@gmail.com", "jojot3750@gmail.com"];
 
 export default function LoginPage() {
-  const [email, setEmail]     = useState('');
-  const [name, setName]       = useState('');
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState('');
-  const [sent, setSent]       = useState(false);
-  const { login }             = useAuth();
+  const [error, setError] = useState("");
+  const [sent, setSent] = useState(false);
+  const { login } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setError("");
     const trimmed = email.trim().toLowerCase();
     if (!NSUT_EMAIL_REGEX.test(trimmed) && !DEV_ALLOWLIST.includes(trimmed)) {
-      setError('Only @nsut.ac.in email addresses are allowed.');
+      setError("Only @nsut.ac.in email addresses are allowed.");
       return;
     }
     setLoading(true);
@@ -27,7 +27,7 @@ export default function LoginPage() {
       await login(email, name.trim());
       setSent(true);
     } catch (err) {
-      setError(err.message || 'Something went wrong. Please try again.');
+      setError(err.message || "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -40,14 +40,25 @@ export default function LoginPage() {
           <div className="w-16 h-16 bg-eco-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
             <Mail className="w-8 h-8 text-moss" strokeWidth={1.5} />
           </div>
-          <h1 className="font-display font-bold text-2xl text-moss mb-2">Check your inbox</h1>
-          <p className="font-body text-bark/55 text-sm leading-relaxed mb-2">We sent a sign-in link to</p>
-          <p className="font-display font-semibold text-moss text-sm mb-4">{email}</p>
+          <h1 className="font-display font-bold text-2xl text-moss mb-2">
+            Check your inbox
+          </h1>
+          <p className="font-body text-bark/55 text-sm leading-relaxed mb-2">
+            We sent a sign-in link to
+          </p>
+          <p className="font-display font-semibold text-moss text-sm mb-4">
+            {email}
+          </p>
           <p className="font-body text-bark/45 text-xs leading-relaxed mb-8">
-            Click the link in the email to sign in. It expires in 1 hour. Check your spam folder if you don't see it.
+            Click the link in the email to sign in. It expires in 1 hour. Check
+            your spam folder if you don't see it.
           </p>
           <button
-            onClick={() => { setSent(false); setEmail(''); setName(''); }}
+            onClick={() => {
+              setSent(false);
+              setEmail("");
+              setName("");
+            }}
             className="btn-secondary w-full justify-center"
           >
             Use a different email
@@ -62,11 +73,18 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         <div className="bg-white rounded-3xl shadow-xl shadow-moss/10 border border-eco-100 p-8 lg:p-10">
           <div className="text-center mb-8">
-            <Link to="/" className="inline-flex items-center justify-center w-14 h-14 bg-moss rounded-2xl mb-4 hover:bg-leaf transition-colors duration-300">
+            <Link
+              to="/"
+              className="inline-flex items-center justify-center w-14 h-14 bg-moss rounded-2xl mb-4 hover:bg-leaf transition-colors duration-300"
+            >
               <Leaf className="w-7 h-7 text-cream" />
             </Link>
-            <h1 className="font-display font-bold text-2xl text-moss mb-1">Welcome to Project ECHO</h1>
-            <p className="font-body text-bark/55 text-sm">Enter your NSUT email to receive a sign-in link</p>
+            <h1 className="font-display font-bold text-2xl text-moss mb-1">
+              Welcome to Project ECHO
+            </h1>
+            <p className="font-body text-bark/55 text-sm">
+              Enter your NSUT email to receive a sign-in link
+            </p>
           </div>
 
           {error && (
@@ -79,7 +97,10 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label className="font-display font-medium text-sm text-bark/70 mb-2 block">
-                Full Name <span className="font-body font-normal text-bark/40">(optional)</span>
+                Full Name{" "}
+                <span className="font-body font-normal text-bark/40">
+                  (optional)
+                </span>
               </label>
               <div className="relative">
                 <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-bark/40" />
@@ -117,9 +138,24 @@ export default function LoginPage() {
             >
               {loading ? (
                 <span className="flex items-center gap-2">
-                  <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  <svg
+                    className="animate-spin w-4 h-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                    />
                   </svg>
                   Sending link...
                 </span>
