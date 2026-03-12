@@ -1,19 +1,21 @@
-import { useEffect, useState } from 'react';
+import { createContext, useEffect, useState } from 'react';
 import { account, ID } from './appwrite';
-import { setVerified, getUserProfile } from './db';
-import { AuthContext } from './useAuth';
+import { getUserByEmail, setVerified, getUserProfile, createUserProfile } from './db';
 
+// AuthContext is defined here and consumed via useAuth.js
+export const AuthContext = createContext(null);
+
+// ── EMAIL ALLOWLIST ────────────────────────────────────────
 const NSUT_EMAIL = /@nsut\.ac\.in$/i;
+
 const DEV_ALLOWLIST = [
-  'kulshresthaprankush@gmail.com', 'iitjee202312345@gmail.com', "jojot3750@gmail.com"
+  'kulshresthaprankush@gmail.com',
+  'iitjee202312345@gmail.com',
+  'jojot3750@gmail.com',
 ];
 
-function userIdStorageKey(email) {
-  return `echo_uid_${email}`;
-}
-
-function userNameStorageKey(email) {
-  return `echo_name_${email}`;
+function isAllowedEmail(email) {
+  return NSUT_EMAIL.test(email) || DEV_ALLOWLIST.includes(email.toLowerCase().trim());
 }
 
 export function AuthProvider({ children }) {
@@ -23,6 +25,9 @@ export function AuthProvider({ children }) {
 
   useEffect(() => { checkAuth(); }, []);
 
+  // ─────────────────────────────────
+  // CHECK EXISTING SESSION
+  // ─────────────────────────────────
   async function checkAuth() {
     try {
       const currentUser = await account.get();
@@ -36,6 +41,9 @@ export function AuthProvider({ children }) {
     }
   }
 
+  // ─────────────────────────────────
+  // FETCH USER PROFILE FROM DB
+  // ─────────────────────────────────
   async function fetchProfile() {
     try {
       const doc = await getUserProfile();
@@ -45,114 +53,147 @@ export function AuthProvider({ children }) {
     }
   }
 
-  // name is optional — stored in localStorage so completeMagicURL can use it
-  async function sendMagicLink(email, name = '') {
-    const trimmed = email.trim().toLowerCase();
-    if (!NSUT_EMAIL.test(trimmed) && !DEV_ALLOWLIST.includes(trimmed)) {
+  // ─────────────────────────────────
+  // LOGIN — SEND MAGIC LINK
+  // ─────────────────────────────────
+  async function login(email, name = '') {
+    const trimmed = email.toLowerCase().trim();
+
+    if (!isAllowedEmail(trimmed)) {
       throw new Error('Only @nsut.ac.in email addresses are allowed.');
     }
 
-    const storageKey = userIdStorageKey(trimmed);
-    let userId = localStorage.getItem(storageKey);
-    if (!userId) {
-      userId = ID.unique();
-      localStorage.setItem(storageKey, userId);
-    }
+    // Reuse existing userId if we have one, else generate fresh
+    let userId = ID.unique();
+    try {
+      const result = await getUserByEmail(trimmed);
+      const docs   = result?.documents ?? [];
+      if (docs.length > 0) {
+        userId = docs[0].userId ?? docs[0].$id;
+      }
+    } catch {}
 
-    // Persist name so completeMagicURL can forward it to the server
+    // Persist name so completeMagicURL can forward it
     if (name) {
-      localStorage.setItem(userNameStorageKey(trimmed), name);
+      localStorage.setItem(`echo_name_${trimmed}`, name);
     }
 
     try {
-      await account.createMagicURLToken(userId, trimmed, `${window.location.origin}/verify`);
+      await account.createMagicURLToken(
+        userId,
+        trimmed,
+        `${window.location.origin}/verify`,
+      );
     } catch (e) {
-      localStorage.removeItem(storageKey);
       throw new Error('Failed to send magic link: ' + e.message);
     }
 
     localStorage.setItem('echo_pending_email', trimmed);
   }
 
+  // ─────────────────────────────────
+  // COMPLETE MAGIC LINK — CALLED ON /verify
+  // ─────────────────────────────────
   async function completeMagicURL(userId, secret) {
-    // If there's already an active session, delete it first.
+
+    // 1. Clear any stale session first
+    try { await account.deleteSession('current'); } catch {}
+    setUser(null);
+    setProfile(null);
+    await new Promise(r => setTimeout(r, 300));
+
+    // 2. Exchange magic link token for a real session
+    //    account.createSession() is the v1.5+ replacement for updateMagicURLSession()
     try {
-      await account.deleteSession('current');
-      setUser(null);
-      setProfile(null);
-    } catch {
-      // No active session — normal path, ignore.
+      await account.createSession(userId, secret);
+    } catch (e) {
+      throw new Error(
+        'Magic link is invalid or expired. Please request a new one. (' +
+        e.message + ')',
+      );
     }
 
-    // Exchange the magic link token for a real session
+    await new Promise(r => setTimeout(r, 500));
+
+    // 3. Create a JWT immediately — passed in request body to server functions
+    //    (Appwrite Cloud strips custom headers; body JWT is the reliable fallback)
     try {
-      await account.updateMagicURLSession(userId, secret);
+      const jwtResult = await account.createJWT();
+      localStorage.setItem('echo_jwt', jwtResult.jwt);
+      console.log('[ECHO] JWT stored:', jwtResult.jwt.slice(0, 30) + '…');
     } catch (e) {
-      throw new Error('Magic link is invalid or expired. Please request a new one. (' + e.message + ')');
+      console.error('[ECHO] JWT creation failed:', e.message);
     }
 
     const pendingEmail = localStorage.getItem('echo_pending_email') || '';
     localStorage.removeItem('echo_pending_email');
 
-    // Retrieve name the user typed on the login page (if any)
     const pendingName = pendingEmail
-      ? localStorage.getItem(userNameStorageKey(pendingEmail)) || ''
+      ? localStorage.getItem(`echo_name_${pendingEmail}`) || ''
       : '';
 
-    // Wait for session to become active
+    // 4. Get Auth account object
     let currentUser = null;
-    for (let i = 0; i < 10; i++) {
-      try { currentUser = await account.get(); break; }
-      catch { await new Promise(r => setTimeout(r, 500)); }
+    try {
+      currentUser = await account.get();
+    } catch {
+      currentUser = { $id: userId, email: pendingEmail, name: '', emailVerification: true };
     }
-    if (!currentUser) throw new Error('Session did not become active. Please try again.');
     setUser(currentUser);
 
-    // Wait for JWT endpoint to be ready
-    let jwtReady = false;
-    for (let i = 0; i < 10; i++) {
+    const userEmail     = currentUser.email || pendingEmail;
+    const userDisplayId = currentUser.$id   || userId;
+    const displayName   = pendingName || currentUser.name?.trim() || '';
+
+    // 5. Ensure DB profile exists — create on first login
+    let doc = null;
+    try {
+      doc = await getUserProfile();
+    } catch {
       try {
-        await account.createJWT();
-        jwtReady = true;
-        break;
-      } catch {
-        await new Promise(r => setTimeout(r, 500));
+        doc = await createUserProfile(displayName, userEmail, userDisplayId);
+        console.log('[ECHO] Profile created for', userEmail);
+      } catch (e) {
+        console.error('[ECHO] createUserProfile failed:', e.message);
       }
     }
-    if (!jwtReady) {
-      console.warn('JWT endpoint not ready after 5s — proceeding anyway.');
-    }
+    setProfile(doc ?? null);
 
-    // Write name to Appwrite auth record so it shows in the console
-    if (pendingName) {
-      try { await account.updateName(pendingName); } catch (e) { console.warn('updateName failed:', e.message); }
-    }
-
+    // 6. Mark as verified in DB (non-fatal)
     try {
-      await setVerified(pendingName || currentUser.name || '');
+      await setVerified(displayName);
     } catch (e) {
-      console.error('setVerified failed:', e.message);
+      console.error('[ECHO] setVerified failed:', e.message);
     }
 
     // Clean up stored name after use
-    if (pendingEmail) localStorage.removeItem(userNameStorageKey(pendingEmail));
+    if (pendingEmail) localStorage.removeItem(`echo_name_${pendingEmail}`);
 
-    await fetchProfile();
+    setLoading(false);
   }
 
+  // ─────────────────────────────────
+  // LOGOUT
+  // ─────────────────────────────────
   async function logout() {
     try { await account.deleteSession('current'); } catch {}
+    localStorage.removeItem('echo_jwt');
     setUser(null);
     setProfile(null);
   }
 
-  async function refreshProfile() { await fetchProfile(); }
+  // ─────────────────────────────────
+  // REFRESH PROFILE
+  // ─────────────────────────────────
+  async function refreshProfile() {
+    await fetchProfile();
+  }
 
   return (
     <AuthContext.Provider value={{
       user, profile, loading,
-      sendMagicLink,
-      login: sendMagicLink,
+      login,
+      sendMagicLink: login,   // alias kept for any legacy callers
       completeMagicURL,
       logout, refreshProfile, checkAuth,
     }}>

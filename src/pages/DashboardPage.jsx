@@ -13,12 +13,7 @@ import {
 import { useAuth } from '../lib/useAuth';
 
 const BINS = [
-  { id: 'bin-1', label: 'Main Gate Lobby' },
-  { id: 'bin-2', label: 'Library Entrance' },
-  { id: 'bin-3', label: 'Block 6 Ground Floor' },
-  { id: 'bin-4', label: 'Block 4 Ground Floor' },
-  { id: 'bin-5', label: 'Canteen Area' },
-  { id: 'bin-6', label: 'Sports Complex' },
+  { id: 'bin-1', label: 'Administrative Block' },
 ];
 
 // ── BAG CODE DISPLAY ──────────────────────────────────────
@@ -382,8 +377,8 @@ export default function DashboardPage() {
               <div className="w-10 h-10 bg-cream/15 rounded-xl flex items-center justify-center mb-4 border border-cream/20">
                 <MapPin className="w-5 h-5 text-eco-300" strokeWidth={1.5} />
               </div>
-              <h3 className="font-display font-semibold text-base mb-2">Find a Bin</h3>
-              <p className="font-body text-cream/65 text-xs leading-relaxed mb-5">6 collection points across campus.</p>
+              <h3 className="font-display font-semibold text-base mb-2">Find the Bin</h3>
+              <p className="font-body text-cream/65 text-xs leading-relaxed mb-5">Administrative Block, ground floor.</p>
               <Link to="/#map" className="inline-flex items-center gap-2 bg-cream text-moss font-display font-semibold text-xs px-4 py-2.5 rounded-full hover:bg-eco-100 transition-colors duration-200 group">
                 View Map <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
               </Link>

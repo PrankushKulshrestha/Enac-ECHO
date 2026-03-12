@@ -23,7 +23,13 @@ const COLS = {
   REDEMPTIONS: "redemptions",
   GROUPS: "groups",
   INVITES: "invites",
+  GROUP_ACHIEVEMENTS: "group_achievements",
 };
+
+const MAX_GROUP_MEMBERS  = 4;
+const BONUS_INTERVAL     = 10;  // group credits per bonus trigger
+const BONUS_PER_MEMBER   = 1;   // eco-points awarded per trigger
+const STALE_DAYS         = 45;  // submission older than this = ineligible
 
 const ITEM_POINTS = {
   "Mobile Phone": 50,
@@ -294,12 +300,12 @@ async function handleSubmissions(action, payload, userId) {
         });
         if (sub.groupId) {
           const grp = await db().getDocument(DB_ID, COLS.GROUPS, sub.groupId);
+          const newGroupPoints = grp.totalPoints + sub.totalPoints;
           await db().updateDocument(DB_ID, COLS.GROUPS, sub.groupId, {
-            totalPoints: grp.totalPoints + sub.totalPoints,
+            totalPoints: newGroupPoints,
           });
+          await checkAndAwardGroupBonuses(sub.groupId, grp.totalPoints, newGroupPoints);
         }
-      }
-      if (oldStatus === "verified" && newStatus !== "verified") {
         await db().updateDocument(DB_ID, COLS.USERS, sub.userId, {
           points: Math.max(0, profile.points - sub.totalPoints),
           totalDeposits: Math.max(0, profile.totalDeposits - 1),
@@ -487,6 +493,81 @@ async function handleRedemptions(action, payload, userId) {
   }
 }
 
+// ── GROUP BONUS HELPER ─────────────────────────────────────
+// Called after group totalPoints changes. Checks if new milestones
+// have been crossed and awards bonus eco-points to qualifying members.
+async function checkAndAwardGroupBonuses(groupId, pointsBefore, pointsAfter) {
+  const milestonesBefore = Math.floor(pointsBefore / BONUS_INTERVAL);
+  const milestonesAfter  = Math.floor(pointsAfter  / BONUS_INTERVAL);
+  if (milestonesAfter <= milestonesBefore) return; // no new milestones
+
+  const group   = await db().getDocument(DB_ID, COLS.GROUPS, groupId);
+  const members = JSON.parse(group.memberIds || "[]");
+
+  for (let m = milestonesBefore + 1; m <= milestonesAfter; m++) {
+    const recipients = [];
+    const warnings   = [];
+    let   totalAwarded = 0;
+
+    for (const memberId of members) {
+      let memberProfile;
+      try {
+        memberProfile = await db().getDocument(DB_ID, COLS.USERS, memberId);
+      } catch {
+        warnings.push(`Member ${memberId}: profile not found — skipped.`);
+        recipients.push({ userId: memberId, name: memberId, awarded: false, reason: 'Profile not found' });
+        continue;
+      }
+
+      const name = memberProfile.name || memberId;
+
+      // Find any active (non-deleted) submission under this group for this member
+      const subs = await db().listDocuments(DB_ID, COLS.SUBMISSIONS, [
+        Query.equal("userId", memberId),
+        Query.equal("groupId", groupId),
+        Query.orderDesc("submittedAt"),
+        Query.limit(50),
+      ]);
+
+      // Check: must have at least one verified submission under this group
+      const verifiedSubs = subs.documents.filter(s => s.status === "verified");
+      if (verifiedSubs.length === 0) {
+        const reason = "No verified submission under this group";
+        warnings.push(`${name}: ${reason} — bonus skipped.`);
+        recipients.push({ userId: memberId, name, awarded: false, reason });
+        continue;
+      }
+
+      // Check: most recent verified submission must be within 45 days
+      const mostRecent     = verifiedSubs[0];
+      const daysSinceLastSub = (Date.now() - new Date(mostRecent.submittedAt).getTime()) / (1000 * 60 * 60 * 24);
+      if (daysSinceLastSub >= STALE_DAYS) {
+        const reason = `Last submission was ${Math.floor(daysSinceLastSub)} days ago (limit: ${STALE_DAYS} days)`;
+        warnings.push(`${name}: ${reason} — bonus skipped.`);
+        recipients.push({ userId: memberId, name, awarded: false, reason });
+        continue;
+      }
+
+      // Award bonus point
+      await db().updateDocument(DB_ID, COLS.USERS, memberId, {
+        points: memberProfile.points + BONUS_PER_MEMBER,
+      });
+      recipients.push({ userId: memberId, name, awarded: true, reason: "" });
+      totalAwarded++;
+    }
+
+    // Record achievement
+    await db().createDocument(DB_ID, COLS.GROUP_ACHIEVEMENTS, ID.unique(), {
+      groupId,
+      milestone:    m,
+      awardedAt:    new Date().toISOString(),
+      recipients:   JSON.stringify(recipients),
+      warnings:     JSON.stringify(warnings),
+      totalAwarded,
+    });
+  }
+}
+
 async function handleGroups(action, payload, userId) {
   switch (action) {
     case "create": {
@@ -551,6 +632,10 @@ async function handleGroups(action, payload, userId) {
       ]);
       if (existing.documents.length > 0) throw new Error("Invite already sent to this email.");
       const group = await db().getDocument(DB_ID, COLS.GROUPS, groupId);
+      const currentMembers = JSON.parse(group.memberIds || "[]");
+      if (currentMembers.length >= MAX_GROUP_MEMBERS) {
+        throw new Error(`This group is full. Groups are limited to ${MAX_GROUP_MEMBERS} members.`);
+      }
       return db().createDocument(DB_ID, COLS.INVITES, ID.unique(), {
         groupId,
         groupName: group.name,
@@ -573,6 +658,9 @@ async function handleGroups(action, payload, userId) {
       if (profile.groupId) throw new Error("You are already in a group. Leave it before accepting another invite.");
       const group = await db().getDocument(DB_ID, COLS.GROUPS, groupId);
       const members = JSON.parse(group.memberIds || "[]");
+      if (members.length >= MAX_GROUP_MEMBERS) {
+        throw new Error(`This group is already full (${MAX_GROUP_MEMBERS} members max).`);
+      }
       if (!members.includes(userId)) members.push(userId);
       await db().updateDocument(DB_ID, COLS.GROUPS, groupId, {
         memberIds: JSON.stringify(members),
@@ -586,6 +674,21 @@ async function handleGroups(action, payload, userId) {
     case "declineInvite":
       await db().updateDocument(DB_ID, COLS.INVITES, payload.inviteId, { status: "declined" });
       return { success: true };
+    case "getAchievements": {
+      const { groupId } = payload;
+      const docs = await db().listDocuments(DB_ID, COLS.GROUP_ACHIEVEMENTS, [
+        Query.equal("groupId", groupId),
+        Query.orderDesc("awardedAt"),
+        Query.limit(100),
+      ]);
+      // Parse JSON fields for client
+      docs.documents = docs.documents.map(d => ({
+        ...d,
+        recipients: (() => { try { return JSON.parse(d.recipients); } catch { return []; } })(),
+        warnings:   (() => { try { return JSON.parse(d.warnings);   } catch { return []; } })(),
+      }));
+      return docs;
+    }
     default:
       throw new Error(`Unknown action: groups.${action}`);
   }

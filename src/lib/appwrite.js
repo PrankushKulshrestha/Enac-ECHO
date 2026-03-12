@@ -17,11 +17,12 @@ export { ID, Query, Permission, Role };
 export const DB_ID = import.meta.env.VITE_APPWRITE_DB_ID;
 
 export const COLLECTIONS = {
-  COUPON_CODES: 'coupon_codes',
-  USERS:        'users',
-  SUBMISSIONS:  'submissions',
-  REWARDS:      'rewards',
-  REDEMPTIONS:  'redemptions',
-  GROUPS:       'groups',
-  INVITES:      'invites',
+  COUPON_CODES:        'coupon_codes',
+  USERS:               'users',
+  SUBMISSIONS:         'submissions',
+  REWARDS:             'rewards',
+  REDEMPTIONS:         'redemptions',
+  GROUPS:              'groups',
+  INVITES:             'invites',
+  GROUP_ACHIEVEMENTS:  'group_achievements',
 };

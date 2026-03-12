@@ -4,7 +4,7 @@ import { Leaf, Mail, User, AlertCircle, Send } from "lucide-react";
 import { useAuth } from "../lib/useAuth";
 
 const NSUT_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@nsut\.ac\.in$/i;
-const DEV_ALLOWLIST = ["kulshresthaprankush@gmail.com", "jojot3750@gmail.com"];
+const DEV_ALLOWLIST = ["kulshresthaprankush@gmail.com", "jojot3750@gmail.com", "iitjee202312345@gmail.com"];
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");

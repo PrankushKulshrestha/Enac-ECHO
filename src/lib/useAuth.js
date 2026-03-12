@@ -1,10 +1,8 @@
-import { createContext, useContext } from 'react';
+import { useContext } from 'react';
+import { AuthContext } from './AuthContext';
 
-// Single source of truth for AuthContext.
-// AuthContext.jsx imports THIS and calls createContext value here.
-// All components import useAuth() from here.
-export const AuthContext = createContext(null);
-
+// Single hook used by all components to access auth state and actions.
+// AuthContext itself is created and provided by AuthContext.jsx (AuthProvider).
 export function useAuth() {
   return useContext(AuthContext);
 }

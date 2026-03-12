@@ -217,3 +217,7 @@ export async function acceptInvite(inviteId, _userId, groupId) {
 export async function declineInvite(inviteId) {
   return _execute('groups', 'declineInvite', { inviteId });
 }
+
+export async function getGroupAchievements(groupId) {
+  return _execute('groups', 'getAchievements', { groupId });
+}

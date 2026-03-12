@@ -1,46 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, MapPin, Recycle, Coins, Gift, Leaf, ChevronDown, Users, Building2, Zap } from 'lucide-react';
+import { ArrowRight, MapPin, Recycle, Coins, Gift, Leaf, ChevronDown, Users, Building2 } from 'lucide-react';
 import { useAuth } from '../lib/useAuth';
-
-// Animated counter hook
-function useCounter(target, duration = 2000, start = false) {
-  const [count, setCount] = useState(0);
-  useEffect(() => {
-    if (!start) return;
-    let startTime = null;
-    const step = (timestamp) => {
-      if (!startTime) startTime = timestamp;
-      const progress = Math.min((timestamp - startTime) / duration, 1);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      setCount(Math.floor(eased * target));
-      if (progress < 1) requestAnimationFrame(step);
-    };
-    requestAnimationFrame(step);
-  }, [target, duration, start]);
-  return count;
-}
-
-// Stat card with counter
-function StatCard({ number, suffix, label, icon: Icon, delay, visible }) {
-  const count = useCounter(number, 1800, visible);
-  return (
-    <div
-      className="flex flex-col items-center gap-3 p-8 rounded-3xl bg-white border border-eco-100 hover:shadow-xl hover:shadow-moss/10 hover:-translate-y-1 transition-all duration-300"
-      style={{ animationDelay: `${delay}ms` }}
-    >
-      <div className="w-12 h-12 bg-eco-100 rounded-2xl flex items-center justify-center">
-        <Icon className="w-6 h-6 text-moss" strokeWidth={1.5} />
-      </div>
-      <div className="text-center">
-        <div className="font-display font-bold text-4xl text-moss tracking-tight">
-          {visible ? count : 0}{suffix}
-        </div>
-        <div className="font-body text-bark/60 text-sm mt-1 tracking-wide">{label}</div>
-      </div>
-    </div>
-  );
-}
 
 // Step card
 function StepCard({ number, icon: Icon, title, description, color }) {
@@ -60,15 +21,13 @@ function StepCard({ number, icon: Icon, title, description, color }) {
   );
 }
 
-// Bin locations on NSUT Dwarka campus
-const BIN_LOCATIONS = [
-  { id: 1, name: 'Main Gate Lobby',       lat: 28.60930343043814,   lng: 77.03525103330269, description: 'Near the main entrance security post' },
-  { id: 2, name: 'Library Entrance',      lat: 28.610326997786746,  lng: 77.03893135257873, description: 'Outside the central library block' },
-  { id: 3, name: 'Block 6 Ground Floor',  lat: 28.610335035820555,  lng: 77.03789310072234, description: 'Inside Block 6, ground floor lobby' },
-  { id: 4, name: 'Block 4 Ground Floor',  lat: 28.609712315644376,  lng: 77.03761619747404, description: 'Inside Block 4, ground floor lobby' },
-  { id: 5, name: 'Canteen Area',          lat: 28.611676671790402,  lng: 77.0373852713702, description: 'Near the main student canteen' },
-  { id: 6, name: 'Sports Complex',        lat: 28.609892912962863,  lng: 77.04004601343885, description: 'At the sports complex entrance' },
-];
+// Single bin location — update lat/lng as needed
+const BIN_LOCATION = {
+  name: 'Administrative Block',
+  lat: 28.609712315644376,
+  lng: 77.03761619747404,
+  description: 'Inside Administrative Block, ground floor lobby',
+};
 
 function BinMap() {
   const mapRef = useRef(null);
@@ -88,7 +47,7 @@ function BinMap() {
       const L = window.L;
 
       const map = L.map(mapRef.current, {
-        center: [28.610335035820555, 77.03789310072234],
+        center: [BIN_LOCATION.lat, BIN_LOCATION.lng],
         zoom: 17,
         scrollWheelZoom: false,
       });
@@ -124,31 +83,30 @@ function BinMap() {
         popupAnchor: [0, -38],
       });
 
-      BIN_LOCATIONS.forEach((bin) => {
-        L.marker([bin.lat, bin.lng], { icon: binIcon })
-          .addTo(map)
-          .bindPopup(`
-            <div style="font-family: sans-serif; min-width: 160px;">
-              <div style="font-weight: 700; color: #2D4A22; font-size: 14px; margin-bottom: 4px;">
-                📍 ${bin.name}
-              </div>
-              <div style="color: #6b7280; font-size: 12px; line-height: 1.4;">
-                ${bin.description}
-              </div>
-              <div style="
-                margin-top: 8px;
-                display: inline-block;
-                background: #f0fdf4;
-                color: #2D4A22;
-                font-size: 10px;
-                font-weight: 600;
-                padding: 2px 8px;
-                border-radius: 999px;
-                border: 1px solid #bbf7d0;
-              ">Bin #${bin.id}</div>
+      L.marker([BIN_LOCATION.lat, BIN_LOCATION.lng], { icon: binIcon })
+        .addTo(map)
+        .bindPopup(`
+          <div style="font-family: sans-serif; min-width: 160px;">
+            <div style="font-weight: 700; color: #2D4A22; font-size: 14px; margin-bottom: 4px;">
+              📍 ${BIN_LOCATION.name}
             </div>
-          `, { maxWidth: 220 });
-      });
+            <div style="color: #6b7280; font-size: 12px; line-height: 1.4;">
+              ${BIN_LOCATION.description}
+            </div>
+            <div style="
+              margin-top: 8px;
+              display: inline-block;
+              background: #f0fdf4;
+              color: #2D4A22;
+              font-size: 10px;
+              font-weight: 600;
+              padding: 2px 8px;
+              border-radius: 999px;
+              border: 1px solid #bbf7d0;
+            ">Collection Bin</div>
+          </div>
+        `, { maxWidth: 220 })
+        .openPopup();
     };
 
     if (window.L) {
@@ -171,13 +129,12 @@ function BinMap() {
   return (
     <div className="map-container w-full h-96 lg:h-[520px] relative">
       <div ref={mapRef} style={{ width: '100%', height: '100%', borderRadius: '24px' }} />
-      {/* Legend overlay */}
       <div className="absolute top-4 right-4 z-[1000] bg-white/95 backdrop-blur-sm rounded-2xl p-4 shadow-lg border border-eco-100">
         <div className="flex items-center gap-2 mb-2">
           <div className="w-3 h-3 rounded-full bg-moss" />
-          <span className="font-body text-xs text-bark/70 font-medium">Collection Bins</span>
+          <span className="font-body text-xs text-bark/70 font-medium">Collection Bin</span>
         </div>
-        <div className="font-mono text-xs text-bark/50">{BIN_LOCATIONS.length} active locations</div>
+        <div className="font-mono text-xs text-bark/50">1 active location</div>
       </div>
     </div>
   );
@@ -186,21 +143,14 @@ function BinMap() {
 export default function HomePage() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const statsRef = useRef(null);
-  const [statsVisible, setStatsVisible] = useState(false);
   const [heroVisible, setHeroVisible] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setHeroVisible(true), 100);
-    const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setStatsVisible(true); },
-      { threshold: 0.3 }
-    );
-    if (statsRef.current) observer.observe(statsRef.current);
-    return () => { clearTimeout(timer); observer.disconnect(); };
+    return () => clearTimeout(timer);
   }, []);
 
-  const handleGetStarted = () => navigate(user ? '/dashboard' : '/register');
+  const handleGetStarted   = () => navigate(user ? '/dashboard' : '/register');
   const handleLoginRedirect = () => navigate(user ? '/dashboard' : '/login');
 
   return (
@@ -210,7 +160,8 @@ export default function HomePage() {
         <div className="absolute top-24 left-8 w-32 h-32 rounded-full bg-eco-200/40 blur-2xl animate-float pointer-events-none" />
         <div className="absolute bottom-24 right-12 w-48 h-48 rounded-full bg-leaf/15 blur-3xl animate-float-delayed pointer-events-none" />
         <div className="absolute top-1/2 left-4 w-20 h-20 rounded-full bg-eco-300/20 blur-xl animate-pulse-slow pointer-events-none" />
-        <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-[0.025]"
+        <div
+          className="absolute inset-0 pointer-events-none overflow-hidden opacity-[0.025]"
           style={{
             backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%232D4A22' fill-opacity='1'%3E%3Cpath d='M30 5 C20 15, 10 25, 30 40 C50 25, 40 15, 30 5z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
           }}
@@ -245,7 +196,7 @@ export default function HomePage() {
             </button>
             <a href="#map" className="btn-secondary text-base group">
               <MapPin className="w-4 h-4" />
-              View Bin Locations
+              View Bin Location
             </a>
           </div>
         </div>
@@ -262,34 +213,33 @@ export default function HomePage() {
           <div className="text-center mb-12">
             <span className="section-tag mb-4 inline-flex">
               <MapPin className="w-3 h-3" />
-              Campus Locations
+              Campus Location
             </span>
             <h2 className="font-display font-bold text-3xl sm:text-4xl text-moss mt-4 mb-3">
-              Find a Collection Bin
+              Find the Collection Bin
             </h2>
             <p className="font-body text-bark/55 text-base max-w-md mx-auto">
-              6 strategically placed bins across NSUT campus for your convenience.
+              Drop off your e-waste at the Administrative Block on NSUT campus.
             </p>
           </div>
 
-          {/* Leaflet map with pins */}
           <BinMap />
 
-          {/* Bin location list below map */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-6">
-            {BIN_LOCATIONS.map((bin) => (
-              <div key={bin.id} className="flex flex-col items-center gap-2 p-3 rounded-2xl bg-eco-50 border border-eco-100 text-center">
-                <div className="w-8 h-8 bg-moss rounded-xl flex items-center justify-center text-cream text-xs font-bold font-mono">
-                  {bin.id}
-                </div>
-                <span className="font-body text-xs text-bark/70 leading-tight">{bin.name}</span>
+          {/* Single location card */}
+          <div className="mt-6 flex justify-center">
+            <div className="flex items-center gap-4 px-6 py-4 rounded-2xl bg-eco-50 border border-eco-100">
+              <div className="w-10 h-10 bg-moss rounded-xl flex items-center justify-center shrink-0 text-lg">
+                ♻️
               </div>
-            ))}
+              <div>
+                <p className="font-display font-semibold text-sm text-moss">{BIN_LOCATION.name}</p>
+                <p className="font-body text-xs text-bark/55 mt-0.5">{BIN_LOCATION.description}</p>
+              </div>
+            </div>
           </div>
         </div>
       </section>
-
-      {/* ── STATS SECTION ── */}
+      {/* ── STATS SECTION ──
       <section ref={statsRef} className="py-20 bg-cream px-6">
         <div className="max-w-5xl mx-auto">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
@@ -299,10 +249,9 @@ export default function HomePage() {
             <StatCard number={5}   suffix="+"   label="Partner Organizations" icon={Building2} delay={300} visible={statsVisible} />
           </div>
         </div>
-      </section>
-
+      </section> */}
       {/* ── HOW IT WORKS ── */}
-      <section className="py-24 bg-white px-6">
+      <section className="py-24 bg-cream px-6">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">
             <span className="section-tag mb-4 inline-flex">
@@ -317,9 +266,9 @@ export default function HomePage() {
             </p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
-            <StepCard number={1} icon={MapPin} title="Deposit E-Waste"   description="Drop your electronic waste at any of our 6 strategically placed bins across campus." color="bg-moss" />
-            <StepCard number={2} icon={Coins}  title="Earn Points"       description="Log your submission and earn eco-points based on the type and quantity of e-waste deposited." color="bg-leaf" />
-            <StepCard number={3} icon={Gift}   title="Redeem Rewards"    description="Exchange your points for exclusive coupons and rewards from our partner brands." color="bg-eco-500" />
+            <StepCard number={1} icon={MapPin} title="Deposit E-Waste"  description="Drop your electronic waste at the Administrative Block collection bin on campus." color="bg-moss" />
+            <StepCard number={2} icon={Coins}  title="Earn Points"      description="Log your submission and earn eco-points based on the type and quantity of e-waste deposited." color="bg-leaf" />
+            <StepCard number={3} icon={Gift}   title="Redeem Rewards"   description="Exchange your points for exclusive coupons and rewards from our partner brands." color="bg-eco-500" />
           </div>
         </div>
       </section>
