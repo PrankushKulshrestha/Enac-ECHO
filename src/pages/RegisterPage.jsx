@@ -20,7 +20,6 @@ export default function RegisterPage() {
     setError('');
     const trimmed = email.trim().toLowerCase();
     if (!NSUT_EMAIL_REGEX.test(trimmed) && !DEV_ALLOWLIST.includes(trimmed)) {
-      console.log(DEV_ALLOWLIST.includes(trimmed), trimmed);
       setError('Only @nsut.ac.in email addresses are allowed.');
       return;
     }

@@ -306,6 +306,7 @@ async function handleSubmissions(action, payload, userId) {
           });
           await checkAndAwardGroupBonuses(sub.groupId, grp.totalPoints, newGroupPoints);
         }
+      } else if (oldStatus === "verified" && newStatus !== "verified") {
         await db().updateDocument(DB_ID, COLS.USERS, sub.userId, {
           points: Math.max(0, profile.points - sub.totalPoints),
           totalDeposits: Math.max(0, profile.totalDeposits - 1),

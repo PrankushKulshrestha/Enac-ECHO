@@ -47,8 +47,6 @@ export default function VerifyCallbackPage() {
         setTimeout(() => navigate('/dashboard', { replace: true }), 1500);
       })
       .catch((err) => {
-        console.error('Magic URL error:', err);
-
         // Session already active means the link worked previously — redirect
         if (err.message?.includes('session is active') || err.message?.includes('prohibited')) {
           setStatus('success');

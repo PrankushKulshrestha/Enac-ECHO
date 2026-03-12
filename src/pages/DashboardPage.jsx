@@ -230,8 +230,7 @@ export default function DashboardPage() {
         const counts = await getAvailableCodeCounts(rwds.documents.map(r => r.$id));
         setCodeCounts(counts);
       }
-    } catch (e) {
-      console.error(e);
+    } catch {
     } finally {
       setLoadingData(false);
     }
@@ -243,7 +242,7 @@ export default function DashboardPage() {
       await deleteSubmission(submission.$id);   // ✅ no extra args
       await refreshProfile();
       await loadAll();
-    } catch (e) { console.error(e); }
+    } catch { /* ignore */ }
   }
 
   async function handleRedeem(reward) {

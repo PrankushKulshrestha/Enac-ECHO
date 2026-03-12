@@ -120,9 +120,7 @@ export function AuthProvider({ children }) {
     try {
       const jwtResult = await account.createJWT();
       localStorage.setItem('echo_jwt', jwtResult.jwt);
-      console.log('[ECHO] JWT stored:', jwtResult.jwt.slice(0, 30) + '…');
     } catch (e) {
-      console.error('[ECHO] JWT creation failed:', e.message);
     }
 
     const pendingEmail = localStorage.getItem('echo_pending_email') || '';
@@ -152,9 +150,7 @@ export function AuthProvider({ children }) {
     } catch {
       try {
         doc = await createUserProfile(displayName, userEmail, userDisplayId);
-        console.log('[ECHO] Profile created for', userEmail);
       } catch (e) {
-        console.error('[ECHO] createUserProfile failed:', e.message);
       }
     }
     setProfile(doc ?? null);
@@ -163,7 +159,6 @@ export function AuthProvider({ children }) {
     try {
       await setVerified(displayName);
     } catch (e) {
-      console.error('[ECHO] setVerified failed:', e.message);
     }
 
     // Clean up stored name after use

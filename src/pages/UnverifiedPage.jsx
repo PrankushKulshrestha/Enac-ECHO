@@ -15,8 +15,7 @@ export default function UnverifiedPage() {
       // Re-use the login function — it sends a fresh magic link to the user's email
       await login(user.email);
       setSent(true);
-    } catch (e) {
-      console.error(e);
+    } catch {
     } finally {
       setLoading(false);
     }

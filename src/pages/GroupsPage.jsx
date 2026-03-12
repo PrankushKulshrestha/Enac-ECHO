@@ -73,8 +73,7 @@ export default function GroupsPage() {
       } else {
         setAchievements([]);
       }
-    } catch (e) {
-      console.error(e);
+    } catch {
     } finally {
       setLoading(false);
     }

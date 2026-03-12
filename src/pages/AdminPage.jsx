@@ -283,7 +283,7 @@ function CodesPanel({ reward, onCodesChanged }) {
     try {
       const res = await getCouponCodesForReward(reward.$id);
       setCodes(res.documents);
-    } catch (e) { console.error(e); }
+    } catch { /* silently show empty state */ }
     finally { setLoading(false); }
   }
   async function handleDelete(codeDoc) {
@@ -294,7 +294,7 @@ function CodesPanel({ reward, onCodesChanged }) {
       await deleteCouponCode(codeDoc.$id);
       setCodes(prev => prev.filter(c => c.$id !== codeDoc.$id));
       onCodesChanged();
-    } catch (e) { console.error(e); }
+    } catch { /* deletion failed — UI unchanged */ }
     finally { setDeletingId(null); }
   }
   const unused = codes.filter(c => !c.isUsed);
