@@ -24,8 +24,8 @@ function StepCard({ number, icon: Icon, title, description, color }) {
 // Single bin location — update lat/lng as needed
 const BIN_LOCATION = {
   name: 'Administrative Block',
-  lat: 28.609712315644376,
-  lng: 77.03761619747404,
+  lat: 28.60982608028556,
+  lng: 77.03703709922338,
   description: 'Inside Administrative Block, ground floor lobby',
 };
 
