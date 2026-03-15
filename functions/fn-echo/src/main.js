@@ -360,13 +360,17 @@ async function handleRewards(action, payload, userId) {
     case "create":
       await requireAdmin(userId);
       return db().createDocument(DB_ID, COLS.REWARDS, ID.unique(), {
-        title: payload.title,
-        description: payload.description,
-        pointsCost: payload.pointsCost,
-        partner: payload.partner,
-        brandName: payload.brandName,
-        logoUrl: payload.logoUrl || null,
-        available: true,
+        title:                payload.title,
+        description:          payload.description,
+        pointsCost:           payload.pointsCost,
+        partner:              payload.partner,
+        brandName:            payload.brandName,
+        logoUrl:              payload.logoUrl || null,
+        available:            true,
+        rewardType:           payload.rewardType || "single_use",
+        multiUseCode:         payload.rewardType === "multi_use" ? (payload.multiUseCode || null) : null,
+        multiUseMaxCount:     payload.rewardType === "multi_use" ? (payload.multiUseMaxCount || 0) : 0,
+        multiUseCurrentCount: 0,
       });
     case "update":
       await requireAdmin(userId);
@@ -414,6 +418,10 @@ async function handleCoupons(action, payload, userId) {
         Query.limit(500),
       ]);
     case "getCount": {
+      const reward = await db().getDocument(DB_ID, COLS.REWARDS, payload.rewardId);
+      if (reward.rewardType === "multi_use") {
+        return { count: Math.max(0, (reward.multiUseMaxCount || 0) - (reward.multiUseCurrentCount || 0)) };
+      }
       const res = await db().listDocuments(DB_ID, COLS.COUPON_CODES, [
         Query.equal("rewardId", payload.rewardId),
         Query.equal("isUsed", false),
@@ -424,6 +432,11 @@ async function handleCoupons(action, payload, userId) {
     case "getCounts": {
       const counts = await Promise.all(
         payload.rewardIds.map(async (id) => {
+          const reward = await db().getDocument(DB_ID, COLS.REWARDS, id).catch(() => null);
+          if (!reward) return { id, count: 0 };
+          if (reward.rewardType === "multi_use") {
+            return { id, count: Math.max(0, (reward.multiUseMaxCount || 0) - (reward.multiUseCurrentCount || 0)) };
+          }
           const res = await db().listDocuments(DB_ID, COLS.COUPON_CODES, [
             Query.equal("rewardId", id),
             Query.equal("isUsed", false),
@@ -451,32 +464,49 @@ async function handleRedemptions(action, payload, userId) {
       const { rewardId, pointsCost } = payload;
       const profile = await db().getDocument(DB_ID, COLS.USERS, userId);
       if (profile.points < pointsCost) throw new Error("Not enough eco-points.");
-      const avail = await db().listDocuments(DB_ID, COLS.COUPON_CODES, [
-        Query.equal("rewardId", rewardId),
-        Query.equal("isUsed", false),
-        Query.limit(1),
-      ]);
-      if (avail.documents.length === 0) throw new Error("No coupon codes left for this reward.");
-      const codeDoc = avail.documents[0];
-      const now = new Date().toISOString();
-      await db().updateDocument(DB_ID, COLS.COUPON_CODES, codeDoc.$id, {
-        isUsed: true,
-        usedBy: userId,
-        usedAt: now,
-      });
-      const remaining = await db().listDocuments(DB_ID, COLS.COUPON_CODES, [
-        Query.equal("rewardId", rewardId),
-        Query.equal("isUsed", false),
-        Query.limit(1),
-      ]);
-      if (remaining.total === 0) {
-        await db().updateDocument(DB_ID, COLS.REWARDS, rewardId, { available: false });
+      const reward = await db().getDocument(DB_ID, COLS.REWARDS, rewardId);
+      const now    = new Date().toISOString();
+      let couponCode;
+
+      if (reward.rewardType === "multi_use") {
+        const used    = reward.multiUseCurrentCount || 0;
+        const maxUses = reward.multiUseMaxCount      || 0;
+        if (used >= maxUses) throw new Error("No more redemptions available for this reward.");
+        const newCount = used + 1;
+        await db().updateDocument(DB_ID, COLS.REWARDS, rewardId, {
+          multiUseCurrentCount: newCount,
+          ...(newCount >= maxUses ? { available: false } : {}),
+        });
+        couponCode = reward.multiUseCode;
+      } else {
+        const avail = await db().listDocuments(DB_ID, COLS.COUPON_CODES, [
+          Query.equal("rewardId", rewardId),
+          Query.equal("isUsed", false),
+          Query.limit(1),
+        ]);
+        if (avail.documents.length === 0) throw new Error("No coupon codes left for this reward.");
+        const codeDoc = avail.documents[0];
+        await db().updateDocument(DB_ID, COLS.COUPON_CODES, codeDoc.$id, {
+          isUsed: true,
+          usedBy: userId,
+          usedAt: now,
+        });
+        const remaining = await db().listDocuments(DB_ID, COLS.COUPON_CODES, [
+          Query.equal("rewardId", rewardId),
+          Query.equal("isUsed", false),
+          Query.limit(1),
+        ]);
+        if (remaining.total === 0) {
+          await db().updateDocument(DB_ID, COLS.REWARDS, rewardId, { available: false });
+        }
+        couponCode = codeDoc.code;
       }
+
       const redemption = await db().createDocument(DB_ID, COLS.REDEMPTIONS, ID.unique(), {
         userId,
         rewardId,
         pointsSpent: pointsCost,
-        couponCode: codeDoc.code,
+        couponCode,
         redeemedAt: now,
       });
       await db().updateDocument(DB_ID, COLS.USERS, userId, {
