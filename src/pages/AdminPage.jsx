@@ -336,6 +336,7 @@ function CodesPanel({ reward, onCodesChanged }) {
 const EMPTY_FORM = {
   title: '', brandName: '', partner: '', logoUrl: '',
   description: '', pointsCost: 100, couponCodesRaw: '',
+  rewardType: 'single_use', multiUseCode: '', multiUseMaxCount: '',
 };
 function AddRewardForm({ onCreated, onCancel }) {
   const [form, setForm]       = useState(EMPTY_FORM);
@@ -343,15 +344,13 @@ function AddRewardForm({ onCreated, onCancel }) {
   const [error, setError]     = useState('');
   const [csvFile, setCsvFile] = useState(null);
   const csvInputRef           = useRef(null);
-
+  const isMultiUse            = form.rewardType === 'multi_use';
   function parseRaw(text) {
     return text.split(/[\n,]+/).map(c => c.trim()).filter(c => c !== '');
   }
   const parsedCodes = parseRaw(form.couponCodesRaw);
-  const quantity    = parsedCodes.length;
-
+  const quantity    = isMultiUse ? Number(form.multiUseMaxCount) || 0 : parsedCodes.length;
   function set(key, val) { setForm(f => ({ ...f, [key]: val })); }
-
   function handleCsvFile(e) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -371,16 +370,20 @@ function AddRewardForm({ onCreated, onCancel }) {
     reader.readAsText(file);
     e.target.value = '';
   }
-
   async function handleSubmit(e) {
     e.preventDefault();
     if (!form.title.trim())     { setError('Voucher name is required.'); return; }
     if (!form.brandName.trim()) { setError('Brand name is required.'); return; }
-    if (quantity === 0)         { setError('Paste at least one coupon code.'); return; }
+    if (isMultiUse) {
+      if (!form.multiUseCode.trim())          { setError('Shared coupon code is required.'); return; }
+      if (!form.multiUseMaxCount || quantity < 1) { setError('Enter a valid max redemption count.'); return; }
+    } else {
+      if (quantity === 0) { setError('Paste at least one coupon code.'); return; }
+    }
     setSaving(true); setError('');
     try {
       const newReward = await createReward(form);
-      await addCouponCodesToReward(newReward.$id, parsedCodes);
+      if (!isMultiUse) await addCouponCodesToReward(newReward.$id, parsedCodes);
       onCreated();
     } catch (e) {
       setError(e.message);
@@ -436,49 +439,97 @@ function AddRewardForm({ onCreated, onCancel }) {
               className="w-full px-4 py-2.5 border-2 border-eco-100 rounded-xl font-body text-sm text-bark focus:outline-none focus:border-moss transition-colors bg-cream/50"
             />
           </div>
-          <div>
-            <label className="font-display font-medium text-xs text-bark/60 mb-1.5 flex items-center gap-1.5">
-              Quantity <span className="font-body font-normal text-bark/35">(auto)</span>
-            </label>
-            <div className={`w-full px-4 py-2.5 border-2 rounded-xl font-mono text-sm flex items-center gap-2 transition-colors ${
-              quantity > 0 ? 'border-eco-300 bg-eco-50 text-eco-700' : 'border-eco-100 bg-cream/30 text-bark/35'
-            }`}>
-              <Hash className="w-3.5 h-3.5 shrink-0" />
-              {quantity > 0 ? `${quantity} coupon${quantity !== 1 ? 's' : ''}` : 'Paste codes below'}
+          {/* Reward Type toggle — full width */}
+          <div className="sm:col-span-2">
+            <label className="font-display font-medium text-xs text-bark/60 mb-1.5 block">Reward Type</label>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { value: 'single_use', label: 'Single-Use Codes',  desc: 'Each user gets a unique code' },
+                { value: 'multi_use',  label: 'Shared Code',        desc: 'One code, used up to N times' },
+              ].map(opt => (
+                <button key={opt.value} type="button"
+                  onClick={() => set('rewardType', opt.value)}
+                  className={`text-left p-3 rounded-2xl border-2 transition-all ${
+                    form.rewardType === opt.value
+                      ? 'border-moss bg-eco-50'
+                      : 'border-eco-100 bg-cream/50 hover:border-moss/40'
+                  }`}>
+                  <p className={`font-display font-semibold text-xs ${form.rewardType === opt.value ? 'text-moss' : 'text-bark/60'}`}>{opt.label}</p>
+                  <p className="font-body text-xs text-bark/40 mt-0.5">{opt.desc}</p>
+                </button>
+              ))}
             </div>
           </div>
-          {/* Coupon Codes — full width */}
-          <div className="sm:col-span-2">
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="font-display font-medium text-xs text-bark/60">
-                Coupon Codes
-                <span className="font-body font-normal text-bark/35 ml-1.5">comma or newline separated</span>
-              </label>
-              <input ref={csvInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleCsvFile} />
-              <button type="button" onClick={() => csvInputRef.current?.click()}
-                className="flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-xl bg-eco-50 text-moss hover:bg-eco-100 transition-colors border border-eco-200">
-                <Upload className="w-3 h-3 shrink-0" />
-                {csvFile ? csvFile : 'Upload CSV'}
-              </button>
-            </div>
-            <textarea
-              value={form.couponCodesRaw}
-              onChange={e => { set('couponCodesRaw', e.target.value); setCsvFile(null); }}
-              placeholder="ZOM10A, ZOM10B, ZOM10C, ZOM10D, ..."
-              rows={3}
-              className="w-full px-4 py-3 border-2 border-eco-100 rounded-xl font-mono text-sm text-bark focus:outline-none focus:border-moss transition-colors bg-cream/50 resize-none"
-            />
-            {quantity > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {parsedCodes.slice(0, 6).map((c, i) => (
-                  <span key={i} className="font-mono text-xs bg-eco-100 text-eco-700 px-2.5 py-0.5 rounded-lg">{c}</span>
-                ))}
-                {quantity > 6 && (
-                  <span className="font-mono text-xs bg-bark/10 text-bark/45 px-2.5 py-0.5 rounded-lg">+{quantity - 6} more</span>
-                )}
+
+          {/* Quantity — pill (multi) or auto-count (single) */}
+          <div>
+            <label className="font-display font-medium text-xs text-bark/60 mb-1.5 flex items-center gap-1.5">
+              {isMultiUse ? 'Max Redemptions' : <>Quantity <span className="font-body font-normal text-bark/35">(auto)</span></>}
+            </label>
+            {isMultiUse ? (
+              <input
+                type="number" min="1" value={form.multiUseMaxCount}
+                onChange={e => set('multiUseMaxCount', e.target.value)}
+                placeholder="e.g. 500"
+                className="w-full px-4 py-2.5 border-2 border-eco-100 rounded-xl font-body text-sm text-bark focus:outline-none focus:border-moss transition-colors bg-cream/50"
+              />
+            ) : (
+              <div className={`w-full px-4 py-2.5 border-2 rounded-xl font-mono text-sm flex items-center gap-2 transition-colors ${
+                quantity > 0 ? 'border-eco-300 bg-eco-50 text-eco-700' : 'border-eco-100 bg-cream/30 text-bark/35'
+              }`}>
+                <Hash className="w-3.5 h-3.5 shrink-0" />
+                {quantity > 0 ? `${quantity} coupon${quantity !== 1 ? 's' : ''}` : 'Paste codes below'}
               </div>
             )}
           </div>
+
+          {/* Shared Code (multi-use only) */}
+          {isMultiUse && (
+            <div>
+              <label className="font-display font-medium text-xs text-bark/60 mb-1.5 block">Shared Coupon Code</label>
+              <input
+                type="text" value={form.multiUseCode}
+                onChange={e => set('multiUseCode', e.target.value)}
+                placeholder="e.g. SAVE20NOW"
+                className="w-full px-4 py-2.5 border-2 border-eco-100 rounded-xl font-body text-sm text-bark focus:outline-none focus:border-moss transition-colors bg-cream/50"
+              />
+            </div>
+          )}
+
+          {/* Coupon Codes textarea — single-use only */}
+          {!isMultiUse && (
+            <div className="sm:col-span-2">
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="font-display font-medium text-xs text-bark/60">
+                  Coupon Codes
+                  <span className="font-body font-normal text-bark/35 ml-1.5">comma or newline separated</span>
+                </label>
+                <input ref={csvInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleCsvFile} />
+                <button type="button" onClick={() => csvInputRef.current?.click()}
+                  className="flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-xl bg-eco-50 text-moss hover:bg-eco-100 transition-colors border border-eco-200">
+                  <Upload className="w-3 h-3 shrink-0" />
+                  {csvFile ? csvFile : 'Upload CSV'}
+                </button>
+              </div>
+              <textarea
+                value={form.couponCodesRaw}
+                onChange={e => { set('couponCodesRaw', e.target.value); setCsvFile(null); }}
+                placeholder="ZOM10A, ZOM10B, ZOM10C, ZOM10D, ..."
+                rows={3}
+                className="w-full px-4 py-3 border-2 border-eco-100 rounded-xl font-mono text-sm text-bark focus:outline-none focus:border-moss transition-colors bg-cream/50 resize-none"
+              />
+              {quantity > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {parsedCodes.slice(0, 6).map((c, i) => (
+                    <span key={i} className="font-mono text-xs bg-eco-100 text-eco-700 px-2.5 py-0.5 rounded-lg">{c}</span>
+                  ))}
+                  {quantity > 6 && (
+                    <span className="font-mono text-xs bg-bark/10 text-bark/45 px-2.5 py-0.5 rounded-lg">+{quantity - 6} more</span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex gap-3 pt-2 border-t border-eco-50">
           <button type="button" onClick={onCancel}
@@ -487,7 +538,9 @@ function AddRewardForm({ onCreated, onCancel }) {
           </button>
           <button type="submit" disabled={saving || quantity === 0}
             className="flex-1 btn-primary justify-center py-3 disabled:opacity-60">
-            {saving ? 'Creating…' : `Create Reward with ${quantity} Code${quantity !== 1 ? 's' : ''}`}
+            {saving ? 'Creating…' : isMultiUse
+            ? `Create Shared Reward (${quantity || 0} uses)`
+            : `Create Reward with ${quantity} Code${quantity !== 1 ? 's' : ''}`}
           </button>
         </div>
       </form>
@@ -831,7 +884,13 @@ export default function AdminPage() {
                   ) : (
                     <div className="space-y-0">
                       {rewards.map(r => {
-                        const available  = codeCounts[r.$id] ?? '…';
+                        const isMultiUse = r.rewardType === 'multi_use';
+                        const available  = isMultiUse
+                          ? `${r.multiUseCurrentCount || 0}/${r.multiUseMaxCount || 0} used`
+                          : codeCounts[r.$id] ?? '…';
+                        const stockEmpty = isMultiUse
+                          ? (r.multiUseCurrentCount || 0) >= (r.multiUseMaxCount || 0)
+                          : codeCounts[r.$id] === 0;
                         const isExpanded = expandedReward === r.$id;
                         return (
                           <div key={r.$id} className="py-5 border-b border-eco-50 last:border-0">
@@ -855,21 +914,28 @@ export default function AdminPage() {
                                   <span className="font-mono text-xs text-bark/25">·</span>
                                   <span className="font-mono text-xs font-bold text-eco-600">{r.pointsCost} pts</span>
                                   <span className="font-mono text-xs text-bark/25">·</span>
-                                  <span className={`font-mono text-xs flex items-center gap-1 ${available === 0 ? 'text-red-500' : 'text-eco-600'}`}>
+                                  <span className={`font-mono text-xs flex items-center gap-1 ${stockEmpty ? 'text-red-500' : 'text-eco-600'}`}>
                                     <Tag className="w-2.5 h-2.5" />
-                                    {available === 0 ? 'out of stock' : `${available} left`}
+                                    {isMultiUse ? available : (stockEmpty ? 'out of stock' : `${available} left`)}
                                   </span>
+                                  {isMultiUse && (
+                                    <span className="font-mono text-xs bg-moss/10 text-moss px-2 py-0.5 rounded-full">multi-use</span>
+                                  )}
                                 </div>
                                 <div className="flex items-center gap-2 flex-wrap mt-3">
-                                  <button onClick={() => setExpandedReward(isExpanded ? null : r.$id)}
-                                    className="flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-xl bg-eco-50 text-moss hover:bg-eco-100 transition-colors">
-                                    {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                                    Codes
-                                  </button>
-                                  <button onClick={() => setAddCodesReward(r)}
-                                    className="flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-xl bg-eco-50 text-moss hover:bg-eco-100 transition-colors">
-                                    <Plus className="w-3 h-3" />Add
-                                  </button>
+                                  {!isMultiUse && (
+                                    <button onClick={() => setExpandedReward(isExpanded ? null : r.$id)}
+                                      className="flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-xl bg-eco-50 text-moss hover:bg-eco-100 transition-colors">
+                                      {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                      Codes
+                                    </button>
+                                  )}
+                                  {!isMultiUse && (
+                                    <button onClick={() => setAddCodesReward(r)}
+                                      className="flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-xl bg-eco-50 text-moss hover:bg-eco-100 transition-colors">
+                                      <Plus className="w-3 h-3" />Add
+                                    </button>
+                                  )}
                                   <button onClick={() => handleToggleReward(r)}
                                     className={`flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-xl transition-all duration-200 ${
                                       r.available
@@ -885,7 +951,7 @@ export default function AdminPage() {
                                 </div>
                               </div>
                             </div>
-                            {isExpanded && (
+                            {!isMultiUse && isExpanded && (
                               <CodesPanel reward={r} onCodesChanged={refreshCodeCounts} />
                             )}
                           </div>
