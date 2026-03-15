@@ -27,7 +27,7 @@ const COLS = {
 };
 
 const MAX_GROUP_MEMBERS  = 4;
-const BONUS_INTERVAL     = 10;  // group credits per bonus trigger
+const BONUS_INTERVAL     = 100; // group credits per bonus trigger
 const BONUS_PER_MEMBER   = 1;   // eco-points awarded per trigger
 const STALE_DAYS         = 45;  // submission older than this = ineligible
 

@@ -18,13 +18,13 @@ import {
 // 1 eco-point added to their personal balance.
 
 const MAX_MEMBERS = 4;
-const BONUS_INTERVAL = 10; // group credits per bonus trigger
+const BONUS_INTERVAL = 100; // group credits per bonus trigger
 const BONUS_PER_MEMBER = 1; // eco-points awarded per trigger
 
 // Only these milestone credit totals are shown in the achievements tab.
-// Bonuses still trigger server-side every 10 credits beyond 1000,
+// Bonuses still trigger server-side every 100 credits beyond 10000,
 // but they are not displayed to keep the UI clean.
-const DISPLAY_MILESTONES = new Set([1, 10, 100]); // milestone numbers (credits / 10)
+const DISPLAY_MILESTONES = new Set([1, 5, 10]); // milestone numbers (credits / 100) → shows 100, 500, 1000
 
 // Helper: days since a date string
 function daysSince(dateStr) {
