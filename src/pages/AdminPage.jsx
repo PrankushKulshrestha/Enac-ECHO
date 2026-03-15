@@ -373,7 +373,9 @@ function AddRewardForm({ onCreated, onCancel }) {
   async function handleSubmit(e) {
     e.preventDefault();
     if (!form.title.trim())     { setError('Voucher name is required.'); return; }
-    if (!form.brandName.trim()) { setError('Brand name is required.'); return; }
+    if (!form.brandName.trim())   { setError('Brand name is required.'); return; }
+    if (!form.partner.trim())     { setError('Partner is required.'); return; }
+    if (!form.description.trim()) { setError('Description is required.'); return; }
     if (isMultiUse) {
       if (!form.multiUseCode.trim())          { setError('Shared coupon code is required.'); return; }
       if (!form.multiUseMaxCount || quantity < 1) { setError('Enter a valid max redemption count.'); return; }

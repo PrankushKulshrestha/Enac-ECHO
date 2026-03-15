@@ -172,8 +172,8 @@ export async function deleteCouponCode(codeId) {
 }
 
 // ── REDEMPTIONS ───────────────────────────────────────────
-export async function redeemReward(_userId, rewardId, pointsCost) {
-  return _execute('redemptions', 'redeem', { rewardId, pointsCost });
+export async function redeemReward(_userId, rewardId) {
+  return _execute('redemptions', 'redeem', { rewardId });
 }
 
 export async function getUserRedemptions() {

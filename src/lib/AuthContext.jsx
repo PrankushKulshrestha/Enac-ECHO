@@ -107,6 +107,7 @@ export function AuthProvider({ children }) {
     try {
       await account.createSession(userId, secret);
     } catch (e) {
+      setLoading(false);
       throw new Error(
         'Magic link is invalid or expired. Please request a new one. (' +
         e.message + ')',

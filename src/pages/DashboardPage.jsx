@@ -223,9 +223,11 @@ export default function DashboardPage() {
       setSubmissions(subs.documents);
       setRewards(rwds.documents);
       setRedemptions(redems.documents);
-      const map = {};
-      rwds.documents.forEach(r => { map[r.$id] = r; });
-      setRewardMap(map);
+      setRewardMap(prev => {
+        const map = { ...prev };
+        rwds.documents.forEach(r => { map[r.$id] = r; });
+        return map;
+      });
       if (rwds.documents.length > 0) {
         const counts = await getAvailableCodeCounts(rwds.documents.map(r => r.$id));
         setCodeCounts(counts);
@@ -249,7 +251,7 @@ export default function DashboardPage() {
     setRedeemError('');
     setRedeemingId(reward.$id);
     try {
-      await redeemReward(user.$id, reward.$id, reward.pointsCost);
+      await redeemReward(user.$id, reward.$id);
       await refreshProfile();
       await loadAll();
     } catch (e) {

@@ -60,8 +60,7 @@ export default function Navbar() {
           <div className="hidden md:flex items-center gap-3">
             {user ? (
               <div className="flex items-center gap-3">
-                <span className="font-body text-sm text-bark/60">Hi, {profile?.name?.split(' ')[0] || user.name?.split(' ')[0] || 'Eco Hero'}
-</span>
+                <span className="font-body text-sm text-bark/60">Hi, {profile?.name?.split(' ')[0] || user.name?.split(' ')[0] || 'Eco Hero'}</span>
                 <button onClick={handleLogout} className="font-display font-semibold text-sm text-moss border-2 border-moss px-5 py-2 rounded-full hover:bg-moss hover:text-cream transition-all duration-300">
                   Log Out
                 </button>

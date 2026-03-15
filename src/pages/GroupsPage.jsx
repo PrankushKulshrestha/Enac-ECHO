@@ -22,15 +22,9 @@ const BONUS_INTERVAL = 100; // group credits per bonus trigger
 const BONUS_PER_MEMBER = 1; // eco-points awarded per trigger
 
 // Only these milestone credit totals are shown in the achievements tab.
-// Bonuses still trigger server-side every 100 credits beyond 10000,
+// Bonuses still trigger server-side every 100 credits beyond 1000,
 // but they are not displayed to keep the UI clean.
 const DISPLAY_MILESTONES = new Set([1, 5, 10]); // milestone numbers (credits / 100) → shows 100, 500, 1000
-
-// Helper: days since a date string
-function daysSince(dateStr) {
-  if (!dateStr) return Infinity;
-  return (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24);
-}
 
 export default function GroupsPage() {
   const { user, profile, refreshProfile } = useAuth();
@@ -363,9 +357,17 @@ export default function GroupsPage() {
                               ? 'text-moss border-b-2 border-moss bg-eco-50/50'
                               : 'text-bark/50 hover:text-bark/70'
                           }`}>
-                          {t.id === 'achievements' && achievements.filter(a => DISPLAY_MILESTONES.has(a.milestone)).length > 0 && (
+                          {t.id === 'achievements' && achievements.filter(a =>
+                            DISPLAY_MILESTONES.has(a.milestone) &&
+                            a.milestone * BONUS_INTERVAL <= (activeGroup?.totalPoints || 0) &&
+                            a.totalAwarded > 0
+                          ).length > 0 && (
                             <span className="inline-flex items-center justify-center w-4 h-4 bg-eco-500 text-white text-xs rounded-full mr-1.5 font-mono">
-                              {achievements.filter(a => DISPLAY_MILESTONES.has(a.milestone)).length}
+                              {achievements.filter(a =>
+                                DISPLAY_MILESTONES.has(a.milestone) &&
+                                a.milestone * BONUS_INTERVAL <= (activeGroup?.totalPoints || 0) &&
+                                a.totalAwarded > 0
+                              ).length}
                             </span>
                           )}
                           {t.label}
@@ -397,7 +399,7 @@ export default function GroupsPage() {
                             <div className="font-mono text-xs text-bark/40">group credits</div>
                             {bonusMilestones > 0 && (
                               <div className="font-mono text-xs text-moss mt-1">
-                                {bonusMilestones} bonus{bonusMilestones !== 1 ? 'es' : ''} triggered
+                                {bonusMilestones} milestone{bonusMilestones !== 1 ? 's' : ''} reached
                               </div>
                             )}
                           </div>
@@ -485,7 +487,7 @@ export default function GroupsPage() {
                           Eco-points earned by members via group bonuses. Each milestone (+{BONUS_INTERVAL} group credits) awards qualifying members +{BONUS_PER_MEMBER} personal eco-point.
                         </p>
 
-                        {achievements.length === 0 ? (
+                        {achievements.filter(a => DISPLAY_MILESTONES.has(a.milestone) && a.milestone * BONUS_INTERVAL <= (activeGroup.totalPoints || 0) && a.totalAwarded > 0).length === 0 ? (
                           <div className="text-center py-10">
                             <div className="w-14 h-14 bg-eco-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
                               <Gift className="w-7 h-7 text-eco-300" strokeWidth={1.5} />
@@ -497,7 +499,13 @@ export default function GroupsPage() {
                           </div>
                         ) : (
                           <div className="space-y-0">
-                            {achievements.filter(ach => DISPLAY_MILESTONES.has(ach.milestone)).map(ach => (
+                            {achievements
+                              .filter(ach =>
+                                DISPLAY_MILESTONES.has(ach.milestone) &&
+                                ach.milestone * BONUS_INTERVAL <= (activeGroup.totalPoints || 0) &&
+                                ach.totalAwarded > 0
+                              )
+                              .map(ach => (
                               <div key={ach.$id} className="py-4 border-b border-eco-50 last:border-0">
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="min-w-0">

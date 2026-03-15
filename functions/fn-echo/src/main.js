@@ -461,11 +461,17 @@ async function handleCoupons(action, payload, userId) {
 async function handleRedemptions(action, payload, userId) {
   switch (action) {
     case "redeem": {
-      const { rewardId, pointsCost } = payload;
+      const { rewardId } = payload;
       const profile = await db().getDocument(DB_ID, COLS.USERS, userId);
+      const reward  = await db().getDocument(DB_ID, COLS.REWARDS, rewardId);
+
+      // Always use server-side pointsCost — never trust client payload
+      const pointsCost = reward.pointsCost;
+
+      if (!reward.available) throw new Error("This reward is no longer available.");
       if (profile.points < pointsCost) throw new Error("Not enough eco-points.");
-      const reward = await db().getDocument(DB_ID, COLS.REWARDS, rewardId);
-      const now    = new Date().toISOString();
+
+      const now = new Date().toISOString();
       let couponCode;
 
       if (reward.rewardType === "multi_use") {
@@ -502,15 +508,16 @@ async function handleRedemptions(action, payload, userId) {
         couponCode = codeDoc.code;
       }
 
+      // Deduct points before recording redemption — prevents free codes if write fails
+      await db().updateDocument(DB_ID, COLS.USERS, userId, {
+        points: profile.points - pointsCost,
+      });
       const redemption = await db().createDocument(DB_ID, COLS.REDEMPTIONS, ID.unique(), {
         userId,
         rewardId,
         pointsSpent: pointsCost,
         couponCode,
         redeemedAt: now,
-      });
-      await db().updateDocument(DB_ID, COLS.USERS, userId, {
-        points: profile.points - pointsCost,
       });
       return redemption;
     }
@@ -534,6 +541,9 @@ async function checkAndAwardGroupBonuses(groupId, pointsBefore, pointsAfter) {
 
   const group   = await db().getDocument(DB_ID, COLS.GROUPS, groupId);
   const members = JSON.parse(group.memberIds || "[]");
+
+  // Bonuses only make sense when the group has more than one member
+  if (members.length < 2) return;
 
   for (let m = milestonesBefore + 1; m <= milestonesAfter; m++) {
     const recipients = [];
@@ -587,15 +597,17 @@ async function checkAndAwardGroupBonuses(groupId, pointsBefore, pointsAfter) {
       totalAwarded++;
     }
 
-    // Record achievement
-    await db().createDocument(DB_ID, COLS.GROUP_ACHIEVEMENTS, ID.unique(), {
-      groupId,
-      milestone:    m,
-      awardedAt:    new Date().toISOString(),
-      recipients:   JSON.stringify(recipients),
-      warnings:     JSON.stringify(warnings),
-      totalAwarded,
-    });
+    // Only record achievement if at least one member actually received a bonus
+    if (totalAwarded > 0) {
+      await db().createDocument(DB_ID, COLS.GROUP_ACHIEVEMENTS, ID.unique(), {
+        groupId,
+        milestone:    m,
+        awardedAt:    new Date().toISOString(),
+        recipients:   JSON.stringify(recipients),
+        warnings:     JSON.stringify(warnings),
+        totalAwarded,
+      });
+    }
   }
 }
 
