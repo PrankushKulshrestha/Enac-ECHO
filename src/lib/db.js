@@ -1,6 +1,6 @@
 import { account, functions, ID, Query } from './appwrite';
 
-const FN_ID = '69a9b6a5003ae8c2400e';
+const FN_ID = import.meta.env.VITE_FN_ID;
 
 export const ITEM_POINTS = {
   'Mobile Phone':     50,
@@ -172,8 +172,8 @@ export async function deleteCouponCode(codeId) {
 }
 
 // ── REDEMPTIONS ───────────────────────────────────────────
-export async function redeemReward(_userId, rewardId) {
-  return _execute('redemptions', 'redeem', { rewardId });
+export async function redeemReward(_userId, rewardId, pointsCost) {
+  return _execute('redemptions', 'redeem', { rewardId, pointsCost });
 }
 
 export async function getUserRedemptions() {
