@@ -399,7 +399,7 @@ export default function GroupsPage() {
                             <div className="font-mono text-xs text-bark/40">group credits</div>
                             {bonusMilestones > 0 && (
                               <div className="font-mono text-xs text-moss mt-1">
-                                {bonusMilestones} milestone{bonusMilestones !== 1 ? 's' : ''} reached
+                                {bonusMilestones} bonus{bonusMilestones !== 1 ? 'es' : ''} recieved
                               </div>
                             )}
                           </div>
