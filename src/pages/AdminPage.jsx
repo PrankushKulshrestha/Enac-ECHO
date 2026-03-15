@@ -469,7 +469,7 @@ function AddRewardForm({ onCreated, onCancel }) {
             {isMultiUse ? (
               <input
                 type="number" min="1" value={form.multiUseMaxCount}
-                onChange={e => set('multiUseMaxCount', e.target.value)}
+                onChange={e => set('multiUseMaxCount', e.target.value === '' ? '' : parseInt(e.target.value, 10) || '')}
                 placeholder="e.g. 500"
                 className="w-full px-4 py-2.5 border-2 border-eco-100 rounded-xl font-body text-sm text-bark focus:outline-none focus:border-moss transition-colors bg-cream/50"
               />

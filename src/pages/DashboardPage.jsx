@@ -415,11 +415,13 @@ export default function DashboardPage() {
           ) : (
             <div className="space-y-0">
               {rewards.map(r => {
-                const codesLeft   = codeCounts[r.$id] ?? 0;
-                const canAfford   = points >= r.pointsCost;
-                const outOfStock  = codesLeft === 0;
-                const isRedeeming = redeemingId === r.$id;
-                const disabled    = !canAfford || outOfStock || isRedeeming;
+                const codesLeft      = codeCounts[r.$id] ?? 0;
+                const canAfford      = points >= r.pointsCost;
+                const outOfStock     = codesLeft === 0;
+                const isRedeeming    = redeemingId === r.$id;
+                const disabled       = !canAfford || outOfStock || isRedeeming;
+                // Count how many times this user has already redeemed this reward
+                const timesRedeemed  = redemptions.filter(rd => rd.rewardId === r.$id).length;
                 return (
                   <div key={r.$id}
                     className={`flex items-center justify-between py-4 border-b border-eco-50 last:border-0 gap-4 flex-wrap transition-opacity duration-200 ${outOfStock ? 'opacity-50' : ''}`}>
@@ -439,10 +441,14 @@ export default function DashboardPage() {
                         <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                           <span className={`font-mono text-xs flex items-center gap-1 ${outOfStock ? 'text-red-400' : 'text-bark/40'}`}>
                             <Tag className="w-3 h-3" />
-                            {outOfStock ? 'Out of stock' : `${codesLeft} available`}
+                            {outOfStock ? 'Out of stock' : `${codesLeft} left`}
                           </span>
                           <span className="text-bark/20 text-xs">·</span>
                           <span className="font-mono text-xs font-bold text-eco-600">{r.pointsCost} pts</span>
+                          {timesRedeemed > 0 && (
+                            <><span className="text-bark/20 text-xs">·</span>
+                            <span className="font-mono text-xs text-bark/40">redeemed {timesRedeemed}×</span></>
+                          )}
                         </div>
                       </div>
                     </div>
