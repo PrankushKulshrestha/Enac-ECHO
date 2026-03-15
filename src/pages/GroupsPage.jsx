@@ -21,6 +21,11 @@ const MAX_MEMBERS = 4;
 const BONUS_INTERVAL = 10; // group credits per bonus trigger
 const BONUS_PER_MEMBER = 1; // eco-points awarded per trigger
 
+// Only these milestone credit totals are shown in the achievements tab.
+// Bonuses still trigger server-side every 10 credits beyond 1000,
+// but they are not displayed to keep the UI clean.
+const DISPLAY_MILESTONES = new Set([1, 10, 100]); // milestone numbers (credits / 10)
+
 // Helper: days since a date string
 function daysSince(dateStr) {
   if (!dateStr) return Infinity;
@@ -358,9 +363,9 @@ export default function GroupsPage() {
                               ? 'text-moss border-b-2 border-moss bg-eco-50/50'
                               : 'text-bark/50 hover:text-bark/70'
                           }`}>
-                          {t.id === 'achievements' && achievements.length > 0 && (
+                          {t.id === 'achievements' && achievements.filter(a => DISPLAY_MILESTONES.has(a.milestone)).length > 0 && (
                             <span className="inline-flex items-center justify-center w-4 h-4 bg-eco-500 text-white text-xs rounded-full mr-1.5 font-mono">
-                              {achievements.length}
+                              {achievements.filter(a => DISPLAY_MILESTONES.has(a.milestone)).length}
                             </span>
                           )}
                           {t.label}
@@ -487,12 +492,12 @@ export default function GroupsPage() {
                             </div>
                             <p className="font-display font-medium text-bark/50 text-sm">No bonuses yet</p>
                             <p className="font-body text-bark/35 text-xs mt-1">
-                              Earn {BONUS_INTERVAL} group credits together to trigger the first bonus
+                              Earn {BONUS_INTERVAL} group credits together to unlock the first milestone
                             </p>
                           </div>
                         ) : (
                           <div className="space-y-0">
-                            {achievements.map(ach => (
+                            {achievements.filter(ach => DISPLAY_MILESTONES.has(ach.milestone)).map(ach => (
                               <div key={ach.$id} className="py-4 border-b border-eco-50 last:border-0">
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="min-w-0">
@@ -501,7 +506,7 @@ export default function GroupsPage() {
                                         <Star className="w-3 h-3 text-moss" />
                                       </div>
                                       <p className="font-display font-semibold text-sm text-moss">
-                                        Milestone #{ach.milestone}
+                                        First {ach.milestone * BONUS_INTERVAL} group credits!
                                       </p>
                                     </div>
                                     <p className="font-body text-xs text-bark/50 ml-8">
