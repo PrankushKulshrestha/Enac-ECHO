@@ -369,7 +369,7 @@ async function handleRewards(action, payload, userId) {
         available:            true,
         rewardType:           payload.rewardType || "single_use",
         multiUseCode:         payload.rewardType === "multi_use" ? (payload.multiUseCode || null) : null,
-        multiUseMaxCount:     payload.rewardType === "multi_use" ? (payload.multiUseMaxCount || 0) : 0,
+        multiUseMaxCount:     payload.rewardType === "multi_use" ? (parseInt(payload.multiUseMaxCount, 10) || 0) : 0,
         multiUseCurrentCount: 0,
       });
     case "update":
